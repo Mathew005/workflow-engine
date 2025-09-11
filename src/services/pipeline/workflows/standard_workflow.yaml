@@ -1,0 +1,27 @@
+name: "Standard Workflow"
+description: "A comprehensive workflow demonstrating parallel and sequential execution."
+
+steps:
+  # --- Parallel Branch 1 ---
+  - name: "parallel_analysis"
+    dependencies: [] # No dependencies, runs at the start
+
+  # --- Parallel Branch 2 ---
+  - name: "data_validation"
+    dependencies: [] # No dependencies, runs at the start
+
+  # --- Parallel Branch 3 (Sequential Chain) ---
+  - name: "memory_fetcher"
+    dependencies: [] # No dependencies, runs at the start
+  
+  - name: "fact_summarizer"
+    dependencies: ["memory_fetcher"] # Runs ONLY after memory_fetcher is done
+
+  # --- Synchronization Point ---
+  - name: "strategist"
+    # This step will only run after ALL of its dependencies are complete.
+    # It waits for three separate branches to finish.
+    dependencies:
+      - "parallel_analysis"
+      - "data_validation"
+      - "fact_summarizer"

@@ -1,0 +1,7 @@
+streamlit
+pydantic
+pydantic_settings
+google-generativeai
+pymongo
+pyyaml
+graphviz

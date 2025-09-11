@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+
+# IDEs
+.vscode/
+.idea/
+
+# Docs
+*.pdf
