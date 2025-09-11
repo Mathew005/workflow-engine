@@ -47,11 +47,11 @@ class ApiKeyManager:
             if key_value:
                 self.keys.append({"key": key_value, "is_active": not is_commented})
                 if not is_commented:
-                    if self.current_key_index is not None:
-                        self.keys[-1]["is_active"] = False
-                    else:
+                    # Only set the first uncommented key as active
+                    if self.current_key_index is None:
                         self.current_key_index = len(self.keys) - 1
         
+        # If no uncommented key was found, activate the first one
         if self.current_key_index is None and self.keys:
             self.current_key_index = 0
             self.keys[0]["is_active"] = True
@@ -73,10 +73,12 @@ class ApiKeyManager:
             if key_pattern.search(line):
                 try:
                     key_state = next(key_iter)
-                    prefix = "" if key_state["is_active"] else "# "
+                    prefix = "" if key_state["is_active"] else "#"
                     new_lines.append(f'{prefix}GEMINI_API_KEY="{key_state["key"]}"\n')
                 except StopIteration:
-                    new_lines.append(line)
+                    # This handles cases where there are more key lines in the file
+                    # than we parsed, which shouldn't happen with the current logic.
+                    new_lines.append(line) 
             else:
                 new_lines.append(line)
 
@@ -104,8 +106,8 @@ class ApiKeyManager:
             next_index = self.current_key_index + 1
             if next_index >= len(self.keys):
                 print("[ERROR] All API keys have been exhausted.")
-                self._save_keys()
                 self.current_key_index = None
+                self._save_keys() # Save the state where all keys are commented out
                 return None
             
             self.current_key_index = next_index

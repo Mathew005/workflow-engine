@@ -12,3 +12,7 @@ __pycache__/
 
 # Docs
 *.pdf
+
+#Additional
+single_file.py
+all_files.txt

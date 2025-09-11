@@ -5,7 +5,7 @@ class ResourceProvider:
     """
     A simple container to hold and provide access to external resources like
     database connections and API clients. This makes it easy to pass all
-    necessary tools to each pipeline step.
+    necessary tools to each pipeline step executor.
     """
     def __init__(self, db_manager: DatabaseManager, gemini_client: GeminiClient):
         self._db_manager = db_manager

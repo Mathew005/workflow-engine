@@ -9,8 +9,6 @@ class Settings(BaseSettings):
         extra='ignore'
     )
 
-    # The API key is now managed by the ApiKeyManager, so we only need the MONGO_URI here.
     mongo_uri: str = Field(..., alias='MONGO_URI')
 
-# Create a single, importable instance of the settings
 settings = Settings()

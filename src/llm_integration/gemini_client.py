@@ -37,7 +37,6 @@ class GeminiClient:
             return {
                 "response_json": parsed_json,
                 "time_taken_ms": int((end_time - start_time) * 1000),
-                "constructed_prompt": str(prompt_content)
             }
         except json.JSONDecodeError as e:
             raise BadResponseError(f"Step '{step_name}' failed to decode LLM JSON. Raw text: '{cleaned_text}'. Error: {e}")
@@ -60,7 +59,8 @@ class GeminiClient:
                     if new_key:
                         print("[INFO] Rotating to the next available API key and retrying (async)...")
                         genai.configure(api_key=new_key)
-                        return await self._call_with_resilience_async(api_call_func)
+                        # We need to retry the original function, not this resilience wrapper
+                        return await self._call_with_resilience_async(api_call_func) 
                     else:
                         raise QuotaError("All API keys have been exhausted or are invalid.")
                 

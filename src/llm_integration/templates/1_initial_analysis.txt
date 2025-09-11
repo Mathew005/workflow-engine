@@ -11,16 +11,11 @@ Your entire output MUST be a single, valid JSON object.
 Perform the following tasks and combine the results into a single JSON object.
 
 1.  **Identify User Intent:** Classify the user's primary goal. Must be one of: `ELABORATE`, `QUERY`, `COMMAND`.
+
 2.  **Assess Conversational Style:** Classify the user's style. Must be one of: `ENGAGED`, `CONCISE`, `DISENGAGED`.
-3.  **Tag Mentioned Topics:** Identify key concepts in the message. For this example, just extract nouns.
 
 # RIGID OUTPUT SCHEMA
 {
   "user_intent": "string",
-  "user_style": "string",
-  "mentioned_topics": [
-    {
-      "name": "string"
-    }
-  ]
+  "user_style": "string"
 }

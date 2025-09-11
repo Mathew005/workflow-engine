@@ -10,7 +10,7 @@ class DatabaseManager:
         self.mongo_uri = mongo_uri
 
     async def get_memory_nodes_for_topic(self, session_id: str, topic_id: str) -> list:
-        # Placeholder for fetching data, e.g., for the FactSummarizerStep
+        # This function can be called by a custom 'code' step if needed.
         print(f"[DB] Pretending to fetch memory nodes for session '{session_id}' and topic '{topic_id}'...")
         # In a real implementation, this would be an async DB call
         return [

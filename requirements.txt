@@ -5,3 +5,6 @@ google-generativeai
 pymongo
 pyyaml
 graphviz
+streamlit-agraph
+pandas
+plotly

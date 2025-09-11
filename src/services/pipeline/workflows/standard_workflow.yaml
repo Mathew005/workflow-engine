@@ -1,27 +1,50 @@
-name: "Standard Workflow"
-description: "A comprehensive workflow demonstrating parallel and sequential execution."
+name: "Dynamic Analysis Workflow"
+description: "A declarative workflow demonstrating parallel execution, custom code, and complex dependencies."
 
 steps:
-  # --- Parallel Branch 1 ---
-  - name: "parallel_analysis"
-    dependencies: [] # No dependencies, runs at the start
+  - name: "initial_analysis"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_initial_analysis.txt"
+      input_mapping:
+        user_message: "user_message"
+      output_key: "initial_analysis_result"
 
-  # --- Parallel Branch 2 ---
-  - name: "data_validation"
-    dependencies: [] # No dependencies, runs at the start
+  - name: "validate_user_message"
+    type: "code"
+    dependencies: []
+    params:
+      function_name: "is_message_long_enough"
+      input_key: "user_message"
+      output_key: "validation_result"
 
-  # --- Parallel Branch 3 (Sequential Chain) ---
-  - name: "memory_fetcher"
-    dependencies: [] # No dependencies, runs at the start
-  
-  - name: "fact_summarizer"
-    dependencies: ["memory_fetcher"] # Runs ONLY after memory_fetcher is done
-
-  # --- Synchronization Point ---
-  - name: "strategist"
-    # This step will only run after ALL of its dependencies are complete.
-    # It waits for three separate branches to finish.
+  # This step depends on a *specific part* of the 'initial_analysis' output.
+  # The orchestrator will see 'initial_analysis_result' and know that this step
+  # must run after the 'initial_analysis' step.
+  - name: "fetch_user_profile"
+    type: "code"
     dependencies:
-      - "parallel_analysis"
-      - "data_validation"
-      - "fact_summarizer"
+      - "initial_analysis_result.user_intent"
+    params:
+      function_name: "get_user_profile_by_intent"
+      input_key: "initial_analysis_result"
+      output_key: "user_profile"
+
+  # This step waits for three different branches to finish.
+  # 1. The main LLM analysis to produce 'initial_analysis_result'.
+  # 2. The code validation to produce 'validation_result'.
+  # 3. The user profile fetch to produce 'user_profile'.
+  - name: "strategist"
+    type: "llm"
+    dependencies:
+      - "initial_analysis_result"
+      - "validation_result"
+      - "user_profile"
+    params:
+      prompt_template: "3_strategist.txt"
+      input_mapping:
+        analysis_result: "initial_analysis_result"
+        is_valid: "validation_result"
+        profile: "user_profile"
+      output_key: "final_strategy"

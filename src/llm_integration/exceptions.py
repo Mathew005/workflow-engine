@@ -1,5 +1,3 @@
-# src/llm_integration/exceptions.py
-
 class APIError(Exception):
     """Base exception for all API-related errors."""
     pass
