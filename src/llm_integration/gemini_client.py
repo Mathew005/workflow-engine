@@ -2,9 +2,10 @@ import google.generativeai as genai
 import time
 import json
 import asyncio
-from typing import Dict, Any, Callable, Awaitable
-from src.llm_integration.key_manager import key_manager
-from src.llm_integration.exceptions import (
+from typing import Dict, Any, Callable, Awaitable, List
+
+from .key_manager import key_manager
+from .exceptions import (
     APIError, RateLimitError, QuotaError, BadResponseError, APIUnavailableError
 )
 
@@ -41,10 +42,18 @@ class GeminiClient:
         except json.JSONDecodeError as e:
             raise BadResponseError(f"Step '{step_name}' failed to decode LLM JSON. Raw text: '{cleaned_text}'. Error: {e}")
 
+    # --- THIS IS THE CORRECTED RESILIENCE LOGIC ---
     async def _call_with_resilience_async(self, api_call_func: Callable[[], Awaitable[Dict[str, Any]]]) -> Dict[str, Any]:
-        max_retries = 3
+        """
+        A wrapper that handles API errors, including retries and API key rotation.
+        The dangerous recursion has been replaced with a safe for-loop.
+        """
+        # Total attempts will be the number of keys plus a few retries for server errors.
+        max_retries = self.key_manager.get_total_keys() + 2 
+
         for attempt in range(max_retries):
             try:
+                # On each attempt, try to execute the function.
                 return await api_call_func()
             except Exception as e:
                 error_str = str(e).lower()
@@ -52,32 +61,41 @@ class GeminiClient:
                 is_quota_error = "quota" in error_str
                 is_fatal_key_error = any(sub in error_str for sub in FATAL_KEY_ERROR_SUBSTRINGS)
 
+                # If it's a key-related error, rotate the key.
                 if is_quota_error or is_fatal_key_error:
                     error_type = "Quota exceeded" if is_quota_error else "Invalid key"
-                    print(f"[WARNING] {error_type} for the current API key (async).")
+                    print(f"[WARNING] {error_type} for current API key. Rotating...")
+                    
                     new_key = self.key_manager.rotate_to_next_key()
+                    
                     if new_key:
-                        print("[INFO] Rotating to the next available API key and retrying (async)...")
+                        print("[INFO] Rotated to the next available API key. Retrying...")
+                        # THIS IS THE CRITICAL FIX: Re-configure the library with the new key.
                         genai.configure(api_key=new_key)
-                        # We need to retry the original function, not this resilience wrapper
-                        return await self._call_with_resilience_async(api_call_func) 
+                        continue # Continue to the next iteration of the loop to retry the call.
                     else:
+                        # If rotation fails, it means we're out of keys.
                         raise QuotaError("All API keys have been exhausted or are invalid.")
                 
+                # Handle other, non-key-related errors
                 if "rate limit" in error_str: raise RateLimitError(f"Rate limit exceeded: {e}")
                 if isinstance(e, BadResponseError): raise 
                 if "500" in error_str or "503" in error_str or "unavailable" in error_str:
                     if attempt < max_retries - 1:
                         wait_time = 2 ** attempt
-                        print(f"[WARNING] Async API unavailable, retrying in {wait_time}s...")
+                        print(f"[WARNING] API unavailable, retrying in {wait_time}s...")
                         await asyncio.sleep(wait_time)
-                        continue
+                        continue # Retry on temporary server errors.
                     else:
-                        raise APIUnavailableError(f"Async API is unavailable after {max_retries} retries: {e}")
+                        raise APIUnavailableError(f"API is unavailable after retries: {e}")
+                
+                # If the error is unknown, raise it.
                 raise APIError(f"An unexpected async API error occurred: {e}")
-        raise APIError("All async retry attempts failed.")
+                
+        raise APIError("All retry attempts failed.")
 
-    async def call_gemini_async(self, prompt: str, step_name: str) -> Dict[str, Any]:
+    async def call_gemini_async(self, prompt_content: Any, step_name: str) -> Dict[str, Any]:
+        """The public method to call the Gemini API with resilience."""
         async def api_call():
-            return await self._execute_gemini_call_async(prompt, step_name)
+            return await self._execute_gemini_call_async(prompt_content, step_name)
         return await self._call_with_resilience_async(api_call)

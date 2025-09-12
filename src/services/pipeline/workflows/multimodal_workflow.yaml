@@ -1,0 +1,37 @@
+name: "Multimodal Document Q&A Workflow"
+description: "A workflow that takes a file (image or PDF) and a text query to perform analysis."
+
+# This workflow requires two inputs: a text query and a file.
+inputs:
+  - name: "user_query"
+    type: "text"
+    label: "Your question about the document:"
+    default: "Summarize the key findings in this document."
+  - name: "context_document"
+    type: "file"
+    label: "Upload Document (Image or PDF):"
+
+steps:
+  # This first step is multimodal. It takes both the user's text query and the uploaded file.
+  - name: "document_analysis"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "4_multimodal_analysis.txt"
+      # The input mapping pulls from both declared inputs.
+      input_mapping:
+        user_question: "user_query"
+        document: "context_document" # This key will contain the file data
+      output_key: "analysis_of_document"
+
+  # This second step is a standard text-only step that depends on the first one.
+  # It demonstrates how multimodal and text-only steps can be chained together.
+  - name: "extract_summary"
+    type: "code"
+    dependencies:
+      - "analysis_of_document"
+    params:
+      function_name: "extract_key_from_dict"
+      # Pass the output of the first step to this function.
+      input_key: "analysis_of_document" 
+      output_key: "extracted_summary"

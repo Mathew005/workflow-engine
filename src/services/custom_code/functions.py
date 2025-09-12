@@ -34,3 +34,13 @@ async def fetch_external_data(some_id: str) -> dict:
     #     return response.json()
     print(f"[CUSTOM CODE] Pretending to fetch external data for ID: {some_id}")
     return {"external_id": some_id, "data": "some important data from a slow API"}
+
+# --- NEW Function for the Multimodal Workflow ---
+
+def extract_key_from_dict(data: Dict[str, Any]) -> str:
+    """
+    A simple function to extract the 'answer' from the document analysis result.
+    This demonstrates chaining a regular code step after a multimodal LLM step.
+    """
+    print(f"[CUSTOM CODE] Extracting 'answer' from the provided dictionary: {data}")
+    return data.get("answer", "No answer was found in the dictionary.")

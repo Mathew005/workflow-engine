@@ -116,4 +116,8 @@ class ApiKeyManager:
             self._save_keys()
             return self.keys[self.current_key_index]["key"]
 
+    def get_total_keys(self) -> int:
+        """Returns the total number of keys loaded."""
+        return len(self.keys)
+
 key_manager = ApiKeyManager()

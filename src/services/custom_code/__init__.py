@@ -2,6 +2,7 @@ from .functions import (
     is_message_long_enough,
     get_user_profile_by_intent,
     fetch_external_data,
+    extract_key_from_dict, # <-- Import the new function
 )
 
 # This registry is the bridge between your declarative YAML and your Python code.
@@ -10,4 +11,5 @@ CODE_STEP_REGISTRY = {
     "is_message_long_enough": is_message_long_enough,
     "get_user_profile_by_intent": get_user_profile_by_intent,
     "fetch_external_data": fetch_external_data,
+    "extract_key_from_dict": extract_key_from_dict, # <-- Add the new function to the registry
 }

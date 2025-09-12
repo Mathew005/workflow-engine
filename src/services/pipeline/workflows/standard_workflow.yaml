@@ -1,5 +1,14 @@
-name: "LangGraph Dynamic Analysis Workflow"
-description: "A declarative workflow built for LangGraph, demonstrating parallel execution and dependencies."
+# This workflow has been updated to the new, more explicit input format.
+name: "Standard Dynamic Analysis Workflow"
+description: "A declarative workflow demonstrating parallel execution and dependencies using only text input."
+
+# NEW: Explicitly declare the inputs required to start this workflow.
+# The UI will dynamically generate widgets based on this section.
+inputs:
+  - name: "user_message"
+    type: "text"
+    label: "Enter User Message:"
+    default: "The new USB-C port is great, but the battery life seems worse."
 
 steps:
   - name: "initial_analysis"
@@ -7,6 +16,7 @@ steps:
     dependencies: []
     params:
       prompt_template: "1_initial_analysis.txt"
+      # The input_mapping now refers to the names declared in the 'inputs' block.
       input_mapping:
         user_message: "user_message"
       output_key: "initial_analysis_result"
@@ -21,8 +31,6 @@ steps:
 
   - name: "fetch_user_profile"
     type: "code"
-    # FIX: This step depends on the ENTIRE output of the analysis step.
-    # The dependency is on the key, not a sub-key.
     dependencies:
       - "initial_analysis_result"
     params:
