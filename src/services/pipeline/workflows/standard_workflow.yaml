@@ -1,5 +1,5 @@
-name: "Dynamic Analysis Workflow"
-description: "A declarative workflow demonstrating parallel execution, custom code, and complex dependencies."
+name: "LangGraph Dynamic Analysis Workflow"
+description: "A declarative workflow built for LangGraph, demonstrating parallel execution and dependencies."
 
 steps:
   - name: "initial_analysis"
@@ -19,22 +19,17 @@ steps:
       input_key: "user_message"
       output_key: "validation_result"
 
-  # This step depends on a *specific part* of the 'initial_analysis' output.
-  # The orchestrator will see 'initial_analysis_result' and know that this step
-  # must run after the 'initial_analysis' step.
   - name: "fetch_user_profile"
     type: "code"
+    # FIX: This step depends on the ENTIRE output of the analysis step.
+    # The dependency is on the key, not a sub-key.
     dependencies:
-      - "initial_analysis_result.user_intent"
+      - "initial_analysis_result"
     params:
       function_name: "get_user_profile_by_intent"
       input_key: "initial_analysis_result"
       output_key: "user_profile"
 
-  # This step waits for three different branches to finish.
-  # 1. The main LLM analysis to produce 'initial_analysis_result'.
-  # 2. The code validation to produce 'validation_result'.
-  # 3. The user profile fetch to produce 'user_profile'.
   - name: "strategist"
     type: "llm"
     dependencies:
