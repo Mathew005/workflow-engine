@@ -1,21 +1,30 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
 from src.data_layer.database_manager import DatabaseManager
-from src.llm_integration.gemini_client import GeminiClient
+
+if TYPE_CHECKING:
+    from src.llm_integration.gemini_client import GeminiClient
 
 class ResourceProvider:
     """
-    A simple container to hold and provide access to external resources like
-    database connections and API clients. This makes it easy to pass all
-    necessary tools to each pipeline step executor.
+    A container for stateful resources. The GeminiClient is set at runtime
+    to ensure it's created within the correct asyncio event loop.
     """
-    def __init__(self, db_manager: DatabaseManager, gemini_client: GeminiClient):
+    def __init__(self, db_manager: DatabaseManager):
         self._db_manager = db_manager
-        self._gemini_client = gemini_client
-        # In the future, you could add:
-        # self._vector_db_client = VectorDBClient()
-        # self._cache_client = CacheClient()
+        self._gemini_client: GeminiClient | None = None
+
+    def set_gemini_client(self, client: GeminiClient) -> None:
+        """Sets the Gemini client for the current run."""
+        self._gemini_client = client
 
     def get_db_manager(self) -> DatabaseManager:
+        """Returns the cached database manager."""
         return self._db_manager
 
     def get_gemini_client(self) -> GeminiClient:
+        """Returns the runtime Gemini client."""
+        if not self._gemini_client:
+            raise ValueError("GeminiClient not initialized for this run.")
         return self._gemini_client

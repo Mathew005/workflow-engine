@@ -1,33 +1,25 @@
 import streamlit as st
 import asyncio
 import yaml
-import json
 from typing import Dict, Any
 from pathlib import Path
 
-# Patches the asyncio event loop to allow nesting, which is crucial for
-# running async code within Streamlit's own running loop.
 import nest_asyncio
 nest_asyncio.apply()
 
 from src.config.settings import settings
 from src.data_layer.database_manager import DatabaseManager
-from src.llm_integration.gemini_client import GeminiClient
 from src.services.pipeline.resource_provider import ResourceProvider
-from src.services.langgraph_builder import LangGraphBuilder
 from src.services.dag_renderer import generate_dag_image
-from src.services.graph_streaming import stream_graph_events
+from src.services.workflow_orchestrator import run_workflow_streaming
 
 st.set_page_config(layout="wide", page_title="LangGraph AI Workflow Engine")
 
 @st.cache_resource
-def initialize_resources():
-    """Initializes and caches stateful resources for the session."""
-    st.write("[INFO] Initializing resources for the first time...")
-    return ResourceProvider(
-        db_manager=DatabaseManager(settings.mongo_uri),
-        gemini_client=GeminiClient()
-    )
+def initialize_base_resources():
+    """Initializes and caches non-async-sensitive resources."""
+    st.write("[INFO] Initializing base resources (DB Manager)...")
+    return ResourceProvider(db_manager=DatabaseManager(settings.mongo_uri))
 
 def get_available_workflows(directory: str) -> Dict[str, Path]:
     """Scans a directory for workflow YAML files."""
@@ -35,24 +27,24 @@ def get_available_workflows(directory: str) -> Dict[str, Path]:
     if not workflow_dir.is_dir(): return {}
     return {f.stem.replace("_", " ").title(): f for f in sorted(workflow_dir.glob("*.yaml"))}
 
-async def run_pipeline_and_stream_results(graph, initial_state, workflow_def):
-    """Orchestrates the two-pass workflow execution for streaming and final state."""
+async def run_and_render_workflow(resources: ResourceProvider, workflow_def: dict, initial_state: dict):
+    """Calls the orchestrator and renders UI updates based on yielded events."""
     st.subheader("Live Execution Log")
     log_placeholder = st.empty()
     st.session_state.debug_records = []
     
     with st.status("Executing workflow...", expanded=True) as status:
-        # Pass 1: Stream events for live logging.
-        async for record in stream_graph_events(graph, initial_state):
-            st.session_state.debug_records.append(record)
-            with log_placeholder.container():
-                display_debug_log(st.session_state.debug_records, workflow_def)
-        
-        status.update(label="Logging complete. Finalizing state...", state="running")
-
-        # Pass 2: Get the definitive final state.
-        st.session_state.last_run_state = await graph.ainvoke(initial_state)
-        status.update(label="Workflow complete!", state="complete")
+        async for event in run_workflow_streaming(resources, workflow_def, initial_state):
+            if event["type"] == "log":
+                record = event["data"]
+                st.session_state.debug_records.append(record)
+                with log_placeholder.container():
+                    display_debug_log(st.session_state.debug_records, workflow_def)
+                await asyncio.sleep(0.01)  # Yield to allow UI to refresh
+            
+            elif event["type"] == "result":
+                st.session_state.last_run_state = event["data"]
+                status.update(label="Workflow complete!", state="complete")
 
 def display_debug_log(debug_records, workflow_def):
     """Renders the structured debug log."""
@@ -68,10 +60,10 @@ def display_debug_log(debug_records, workflow_def):
             st.subheader("Node Configuration (from YAML)")
             st.json(steps_config.get(step_name, {}).get('params', {}))
 
-# --- Main Application --- #
+# --- UI Layer --- #
 st.title("Declarative AI Workflow Engine (Powered by LangGraph)")
 
-resources = initialize_resources()
+resources = initialize_base_resources()
 
 col1, col2 = st.columns([1, 2])
 with col1:
@@ -115,14 +107,14 @@ with col2:
             st.error("A required file is not uploaded.")
         else:
             try:
-                graph = LangGraphBuilder(workflow_def, resources).build()
-                asyncio.run(run_pipeline_and_stream_results(graph, initial_state, workflow_def))
-            except Exception as e: st.error(f"Workflow Compilation Error: {e}"); st.exception(e)
+                asyncio.run(run_and_render_workflow(resources, workflow_def, initial_state))
+            except Exception as e:
+                st.error(f"An unexpected error occurred during the workflow run: {e}")
+                st.exception(e)
 
 st.divider()
 
 # --- Results Display Section --- #
-# Defensively check for the existence and content of the results before rendering.
 if 'last_run_state' in st.session_state and isinstance(st.session_state.last_run_state, dict):
     st.subheader("Pipeline Results")
     final_run_state = st.session_state.last_run_state
@@ -131,7 +123,6 @@ if 'last_run_state' in st.session_state and isinstance(st.session_state.last_run
     
     with tab1:
         try:
-            # Filter out internal keys for a cleaner display.
             display_state = {k: v for k, v in final_run_state.items() if not k.startswith('__') and k != 'debug_log'}
             st.json(display_state)
         except TypeError as e:
@@ -139,10 +130,8 @@ if 'last_run_state' in st.session_state and isinstance(st.session_state.last_run
             st.write(display_state)
 
     with tab2:
-        # Defensively check for the execution log and ensure it's a list of strings.
         log_items = final_run_state.get("execution_log", [])
         if isinstance(log_items, list):
-            # Ensure all items in the list are strings before joining.
             log_text = "\n".join(map(str, log_items))
             st.code(log_text, language="text")
         else:
