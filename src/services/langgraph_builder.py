@@ -120,15 +120,23 @@ class LangGraphBuilder:
         for step in steps:
             step_name = step['name']
             dependencies = step.get('dependencies', [])
-            if not dependencies:
+            
+            # Resolve the list of source node names from the dependency keys
+            source_nodes = []
+            for dep_key in dependencies:
+                source_node = self.output_to_step_map.get(dep_key)
+                if not source_node:
+                    raise ValueError(f"Unresolved dependency '{dep_key}' for step '{step_name}'")
+                source_nodes.append(source_node)
+                non_terminal_nodes.add(source_node)
+
+            if not source_nodes:
+                # This is a root node with no dependencies.
                 self.graph_builder.add_edge(START, step_name)
             else:
-                for dep_key in dependencies:
-                    source_step_name = self.output_to_step_map.get(dep_key)
-                    if not source_step_name:
-                        raise ValueError(f"Unresolved dependency '{dep_key}' for step '{step_name}'")
-                    self.graph_builder.add_edge(source_step_name, step_name)
-                    non_terminal_nodes.add(source_step_name)
+                # This node depends on one or more other nodes.
+                # LangGraph correctly waits for all nodes in the list to complete.
+                self.graph_builder.add_edge(source_nodes, step_name)
         
         terminal_nodes = all_step_names - non_terminal_nodes
         for node_name in terminal_nodes:
