@@ -1,9 +1,6 @@
-# This workflow has been updated to the new, more explicit input format.
 name: "Standard Dynamic Analysis Workflow"
 description: "A declarative workflow demonstrating parallel execution and dependencies using only text input."
 
-# NEW: Explicitly declare the inputs required to start this workflow.
-# The UI will dynamically generate widgets based on this section.
 inputs:
   - name: "user_message"
     type: "text"
@@ -16,7 +13,6 @@ steps:
     dependencies: []
     params:
       prompt_template: "1_initial_analysis.txt"
-      # The input_mapping now refers to the names declared in the 'inputs' block.
       input_mapping:
         user_message: "user_message"
       output_key: "initial_analysis_result"
@@ -25,7 +21,8 @@ steps:
     type: "code"
     dependencies: []
     params:
-      function_name: "is_message_long_enough"
+      # UPDATED: Using the fully qualified class name
+      function_name: "validation.IsMessageLongEnoughStep"
       input_key: "user_message"
       output_key: "validation_result"
 
@@ -34,7 +31,8 @@ steps:
     dependencies:
       - "initial_analysis_result"
     params:
-      function_name: "get_user_profile_by_intent"
+      # UPDATED: Using the fully qualified class name
+      function_name: "user_profile.GetUserProfileByIntentStep"
       input_key: "initial_analysis_result"
       output_key: "user_profile"
 
@@ -48,6 +46,8 @@ steps:
       prompt_template: "3_strategist.txt"
       input_mapping:
         analysis_result: "initial_analysis_result"
-        is_valid: "validation_result"
+        # The output of the Pydantic model is a dict: {"is_long_enough": true}
+        is_valid: "validation_result" 
+        # The output of the Pydantic model is a dict: {"profile": {...}}
         profile: "user_profile"
       output_key: "final_strategy"
