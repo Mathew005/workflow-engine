@@ -1,0 +1,14 @@
+# TASK
+Parse the following email body to extract structured contact information and the user's primary intent.
+
+# EMAIL BODY
+<email_body>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object. The intent must be one of: "Demo Request", "Pricing Inquiry", "Technical Question", "Partnership", "Other".
+{
+  "full_name": "string or null",
+  "company_name": "string or null",
+  "email": "string or null",
+  "intent": "string"
+}

@@ -1,0 +1,38 @@
+name: "3. Orchestrator with Sub-Workflow"
+description: "Demonstrates composing workflows by calling the 'Basic Text Analysis' workflow as a single step."
+inputs:
+  - name: "customer_review_text"
+    type: "text"
+    label: "Enter a customer review:"
+    default: "This product is fantastic! It solved my problem immediately. However, the documentation could be a bit clearer on the advanced features. I found a small bug in the settings panel."
+
+steps:
+  - name: "translate_input_llm"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_translate.txt"
+      input_mapping:
+        text_to_translate: "customer_review_text"
+      output_key: "translated_text"
+
+  - name: "run_text_analysis_sub_workflow"
+    type: "workflow"
+    dependencies:
+      - "translated_text"
+    params:
+      workflow_name: "1_Basic_Text_Analysis"
+      input_mapping:
+        translated_text.english_translation: "text_input"
+      output_mapping:
+        final_report: "analysis_report"
+  
+  - name: "determine_final_action_code"
+    type: "code"
+    dependencies:
+      - "analysis_report"
+    params:
+      function_name: "business_logic.DetermineFinalActionStep"
+      input_mapping:
+        report: "analysis_report"
+      output_key: "final_action"

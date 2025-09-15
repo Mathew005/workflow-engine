@@ -1,0 +1,87 @@
+name: "5. Advanced Lead Processor (Complex Hybrid)"
+description: "A complex, text-only workflow with multiple parallel branches and joins to simulate a real-world business process."
+inputs:
+  - name: "lead_email_body"
+    type: "text"
+    label: "Paste the raw lead email body:"
+    default: "Hello, my name is Alex from InnovateTech Solutions. We are very interested in getting a demo of your enterprise platform. My email is alex@innovatetech.com. Thanks."
+
+steps:
+  - name: "extract_details_llm"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_extract_lead_details.txt"
+      input_mapping:
+        email_body: "lead_email_body"
+      output_key: "extracted_data"
+
+  - name: "validate_email_code"
+    type: "code"
+    dependencies:
+      - "extracted_data"
+    params:
+      function_name: "lead_processing.ValidateEmailStep"
+      input_mapping:
+        email: "extracted_data.email"
+      output_key: "email_validation"
+
+  - name: "enrich_company_code"
+    type: "code"
+    dependencies:
+      - "extracted_data"
+    params:
+      function_name: "lead_processing.EnrichCompanyStep"
+      input_mapping:
+        company_name: "extracted_data.company_name"
+      output_key: "company_enrichment"
+
+  - name: "check_if_competitor_llm"
+    type: "llm"
+    dependencies:
+      - "extracted_data"
+    params:
+      prompt_template: "2_check_if_competitor.txt"
+      input_mapping:
+        company_name: "extracted_data.company_name"
+      output_key: "competitor_check"
+
+  - name: "score_lead_code"
+    type: "code"
+    dependencies:
+      - "email_validation"
+      - "company_enrichment"
+      - "competitor_check"
+    params:
+      function_name: "lead_processing.ScoreLeadStep"
+      input_mapping:
+        validation_result: "email_validation"
+        company_data: "company_enrichment"
+        competitor_analysis: "competitor_check"
+      output_key: "lead_score"
+
+  - name: "determine_routing_code"
+    type: "code"
+    dependencies:
+      - "lead_score"
+      - "extracted_data" # Needs original intent
+    params:
+      function_name: "lead_processing.DetermineRoutingStep"
+      input_mapping:
+        score_result: "lead_score"
+        original_intent: "extracted_data.intent"
+      output_key: "routing_decision"
+  
+  - name: "generate_briefing_llm"
+    type: "llm"
+    dependencies:
+      - "routing_decision" # Depends on the final routing
+      - "company_enrichment" # Also needs the data for the briefing
+    params:
+      prompt_template: "3_generate_briefing.txt"
+      input_mapping:
+        original_data: "extracted_data"
+        enriched_data: "company_enrichment"
+        score: "lead_score"
+        routing: "routing_decision"
+      output_key: "final_sales_briefing"

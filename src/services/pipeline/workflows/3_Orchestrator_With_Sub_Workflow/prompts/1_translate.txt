@@ -1,0 +1,12 @@
+# TASK
+Translate the following text into English. If it is already in English, simply return the original text.
+
+# TEXT
+<text_to_translate>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
+{
+  "original_language": "string (e.g., 'Spanish', 'English')",
+  "english_translation": "string"
+}

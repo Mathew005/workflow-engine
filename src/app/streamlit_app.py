@@ -14,6 +14,8 @@ from src.services.pipeline.resource_provider import ResourceProvider
 from src.services.dag_renderer import generate_dag_image
 from src.services.workflow_orchestrator import run_workflow_streaming
 from src.domain.workflow_schema import WorkflowDefinition
+# NEW import
+from src.domain.lifecycle import StepLifecycle
 
 st.set_page_config(layout="wide", page_title="LangGraph AI Workflow Engine")
 
@@ -38,13 +40,16 @@ async def run_and_render_workflow(resources: ResourceProvider, workflow_def: Wor
     
     workflow_dict = workflow_def.model_dump(exclude_none=True)
 
-    # --- FIX: Wrap the initial UI inputs into the 'workflow_data' bucket ---
-    # And initialize the required log/error channels.
+    # --- FIX: Initialize the step_lifecycle dictionary ---
+    step_names = {step['name'] for step in workflow_dict.get('steps', [])}
+    initial_lifecycle = {name: StepLifecycle.PENDING for name in step_names}
+
     full_initial_state = {
         "workflow_data": initial_state,
         "execution_log": [],
         "debug_log": [],
-        "error_info": []
+        "error_info": [],
+        "step_lifecycle": initial_lifecycle, # Add to initial state
     }
 
     with st.status("Executing workflow...", expanded=True) as status:
@@ -115,7 +120,6 @@ with col1:
         st.stop()
 with col2:
     st.subheader("Pipeline Inputs")
-    # This initial_state is now just for the UI inputs, it will be wrapped before execution
     initial_ui_state = {}
     for wf_input in workflow_def.inputs:
         input_name, input_type = wf_input.name, wf_input.type
@@ -138,10 +142,9 @@ st.divider()
 if 'last_run_state' in st.session_state and isinstance(st.session_state.last_run_state, dict):
     st.subheader("Pipeline Results")
     final_run_state = st.session_state.last_run_state
-    tab1, tab2 = st.tabs(["Final State", "Execution Summary"])
+    tab1, tab2, tab3 = st.tabs(["Final State", "Execution Summary", "Lifecycle Log"])
     with tab1:
         try:
-            # --- FIX: Display the workflow_data bucket for the final result ---
             display_state = final_run_state.get("workflow_data", {})
             st.json(display_state)
         except TypeError as e:
@@ -155,3 +158,5 @@ if 'last_run_state' in st.session_state and isinstance(st.session_state.last_run
         else:
             st.warning("Execution log is not in the expected format.")
             st.write(log_items)
+    with tab3:
+        st.json(final_run_state.get("step_lifecycle", {}))

@@ -1,0 +1,12 @@
+# TASK
+Based on the company name provided, determine if they are a known competitor in the B2B SaaS software industry.
+
+# COMPANY NAME
+<company_name>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
+{
+  "is_competitor": "boolean",
+  "reasoning": "string (A brief explanation for your decision)"
+}

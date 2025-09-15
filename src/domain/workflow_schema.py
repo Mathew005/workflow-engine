@@ -10,14 +10,15 @@ class WorkflowInput(BaseModel):
 class StepParams(BaseModel):
     # Common
     output_key: Optional[str] = None # Not required for workflow steps
-    input_mapping: Dict[str, str] = Field(default_factory=dict)
     
-    # Code steps
-    input_key: Optional[str] = None
-    function_name: Optional[str] = None
+    # Used by 'llm' and 'code' steps
+    input_mapping: Dict[str, str] = Field(default_factory=dict)
     
     # LLM steps
     prompt_template: Optional[str] = None
+    
+    # Code steps
+    function_name: Optional[str] = None
     
     # Workflow steps
     workflow_name: Optional[str] = None

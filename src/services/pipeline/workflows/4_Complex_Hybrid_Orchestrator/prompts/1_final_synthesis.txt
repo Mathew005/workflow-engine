@@ -1,0 +1,13 @@
+# TASK
+Synthesize the results from a text analysis and an image analysis into a single, holistic summary of a blog post.
+
+# CONTEXT
+- Text analysis report: <text_analysis>
+- Image analysis report: <image_analysis>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
+{
+  "overall_summary": "string (A one-paragraph summary combining insights from both the text and image)",
+  "suggested_title": "string (A compelling title for the blog post)"
+}

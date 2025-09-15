@@ -1,0 +1,45 @@
+name: "4. Complex Hybrid Orchestrator"
+description: "A master workflow that runs the text and image analysis sub-workflows in parallel and synthesizes their results."
+inputs:
+  - name: "article_text"
+    type: "text"
+    label: "Enter the main article text:"
+    default: "Our latest product launch has been a massive success. The new AI-powered features are receiving rave reviews for their accuracy and speed. We believe this technology will set a new standard in the industry."
+  - name: "main_image"
+    type: "file"
+    label: "Upload the main article image:"
+
+steps:
+  - name: "run_text_analysis_branch"
+    type: "workflow"
+    dependencies: []
+    params:
+      workflow_name: "1_Basic_Text_Analysis"
+      input_mapping:
+        article_text: "text_input"
+      output_mapping:
+        final_report: "text_report"
+
+  - name: "run_image_analysis_branch"
+    type: "workflow"
+    dependencies: []
+    params:
+      workflow_name: "2_Hybrid_Image_Analysis"
+      input_mapping:
+        main_image: "image_input"
+        # We can pass static text to prompts in sub-workflows
+        "'Summarize the contents of this article image'": "image_prompt"
+      output_mapping:
+        final_image_caption: "image_report"
+
+  - name: "final_synthesis_llm"
+    type: "llm"
+    dependencies:
+      - "text_report"
+      - "image_report"
+    params:
+      prompt_template: "1_final_synthesis.txt"
+      input_mapping:
+        text_analysis: "text_report"
+        image_analysis: "image_report"
+      output_key: "holistic_summary"

@@ -1,0 +1,52 @@
+name: "2. Hybrid Image Analysis (Sequential & Parallel)"
+description: "A multimodal workflow combining parallel analysis of an image with a sequential text analysis chain."
+inputs:
+  - name: "image_input"
+    type: "file"
+    label: "Upload an image:"
+  - name: "image_prompt"
+    type: "text"
+    label: "What should I analyze in the image?"
+    default: "Describe the main subject and overall mood of this image."
+
+steps:
+  - name: "describe_image_llm"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_describe_image.txt"
+      input_mapping:
+        image_to_describe: "image_input"
+        user_prompt: "image_prompt"
+      output_key: "image_description"
+
+  - name: "extract_image_metadata_code"
+    type: "code"
+    dependencies: []
+    params:
+      function_name: "image_processing.ExtractImageMetadataStep"
+      input_mapping:
+        image_file: "image_input"
+      output_key: "image_metadata"
+
+  - name: "analyze_description_llm"
+    type: "llm"
+    dependencies:
+      - "image_description"
+    params:
+      prompt_template: "2_analyze_description_sentiment.txt"
+      input_mapping:
+        description: "image_description"
+      output_key: "description_sentiment"
+
+  - name: "generate_final_caption_llm"
+    type: "llm"
+    dependencies:
+      - "image_metadata"
+      - "description_sentiment"
+    params:
+      prompt_template: "3_generate_final_caption.txt"
+      input_mapping:
+        metadata: "image_metadata"
+        sentiment: "description_sentiment"
+      output_key: "final_image_caption"

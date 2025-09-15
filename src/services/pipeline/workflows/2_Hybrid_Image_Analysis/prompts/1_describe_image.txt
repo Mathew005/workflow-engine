@@ -1,0 +1,11 @@
+# TASK
+Analyze the provided image based on the user's prompt.
+
+# USER PROMPT
+<user_prompt>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
+{
+  "description": "string (Your detailed description of the image)"
+}

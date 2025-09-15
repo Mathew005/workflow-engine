@@ -1,0 +1,38 @@
+name: "1. Basic Text Analysis (Fan-Out, Fan-In)"
+description: "Demonstrates parallel execution of LLM and Code steps, then joins their results."
+inputs:
+  - name: "text_input"
+    type: "text"
+    label: "Enter a block of text to analyze:"
+    default: "The new declarative workflow engine is incredibly powerful. By leveraging YAML for definitions, it simplifies the creation of complex AI pipelines. The automatic discovery of custom code nodes is a fantastic feature for extensibility."
+
+steps:
+  - name: "summarize_text_llm"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_summarize.txt"
+      input_mapping:
+        text_to_summarize: "text_input"
+      output_key: "summary_result"
+
+  - name: "check_text_quality_code"
+    type: "code"
+    dependencies: []
+    params:
+      function_name: "text_processing.CheckTextQualityStep"
+      input_mapping:
+        text: "text_input"
+      output_key: "quality_stats_result"
+
+  - name: "synthesize_report_llm"
+    type: "llm"
+    dependencies:
+      - "summary_result"
+      - "quality_stats_result"
+    params:
+      prompt_template: "2_synthesize_report.txt"
+      input_mapping:
+        summary: "summary_result"
+        statistics: "quality_stats_result"
+      output_key: "final_report"

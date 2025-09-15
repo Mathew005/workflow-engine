@@ -1,0 +1,13 @@
+# TASK
+Generate a comprehensive, SEO-friendly caption for an image using the provided metadata and sentiment analysis.
+
+# CONTEXT
+- Image file metadata: <metadata>
+- Sentiment of the image content: <sentiment>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
+{
+  "caption": "string (A one-sentence caption, e.g., 'A vibrant, positive-sentiment image file of size 123.45 KB.')",
+  "seo_keywords": ["string", "string", "string"]
+}
