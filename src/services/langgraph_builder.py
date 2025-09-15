@@ -72,10 +72,7 @@ class LangGraphBuilder:
 
     def _create_llm_node(self, step_name: str, params: Dict[str, Any]):
         async def llm_node(state: GraphState) -> Dict[str, Any]:
-            # Enforce fail-fast behavior: if an error is detected, halt execution of this node.
-            if state.get("error_info"):
-                return {}
-            
+            if state.get("error_info"): return {}
             start_time = time.perf_counter()
             workflow_data = state.get("workflow_data", {})
             resolved_inputs = {key: _resolve_value_from_state(workflow_data, val) for key, val in params.get('input_mapping', {}).items()}
@@ -99,10 +96,7 @@ class LangGraphBuilder:
 
     def _create_code_node(self, step_name: str, params: Dict[str, Any]):
         async def code_node(state: GraphState) -> Dict[str, Any]:
-            # Enforce fail-fast behavior: if an error is detected, halt execution of this node.
-            if state.get("error_info"):
-                return {}
-
+            if state.get("error_info"): return {}
             start_time = time.perf_counter()
             workflow_data = state.get("workflow_data", {})
             resolved_inputs = {
@@ -127,10 +121,7 @@ class LangGraphBuilder:
 
     def _create_workflow_node(self, step_name: str, params: Dict[str, Any]):
         async def workflow_node(state: GraphState) -> Dict[str, Any]:
-            # Enforce fail-fast behavior: if an error is detected, halt execution of this node.
-            if state.get("error_info"):
-                return {}
-
+            if state.get("error_info"): return {}
             start_time = time.perf_counter()
             workflow_data = state.get("workflow_data", {})
             sub_workflow_name = params['workflow_name']
@@ -141,18 +132,36 @@ class LangGraphBuilder:
             }
             sub_initial_state = {"workflow_data": sub_initial_data}
             sanitized_inputs = sanitize_for_json(sub_initial_state["workflow_data"])
+            
             try:
                 sub_graph = self._compile_sub_workflow(sub_workflow_name)
-                sub_final_state = await sub_graph.ainvoke(sub_initial_state)
-                if sub_final_state.get("error_info"):
-                    raise RuntimeError(f"Sub-workflow '{sub_workflow_name}' failed.")
+
+                # --- FIX: SEPARATE STREAMING FROM STATE LOGIC ---
+                
+                # 1. Stream events for UI visualization only.
+                # We fully consume the async generator but don't use it for the final state.
+                async for event in sub_graph.astream_events(sub_initial_state, version="v1"):
+                    repackaged_event = {
+                        "parent_step": step_name,
+                        "sub_workflow": sub_workflow_name,
+                        "original_event": event
+                    }
+                    await self.resources.emit_event({"type": "sub_workflow_event", "data": repackaged_event})
+
+                # 2. Get the definitive final state using ainvoke for correctness.
+                final_sub_state = await sub_graph.ainvoke(sub_initial_state)
+
+                if final_sub_state.get("error_info"):
+                    sub_error = final_sub_state["error_info"][0]
+                    raise RuntimeError(f"Sub-workflow '{sub_workflow_name}' failed at step '{sub_error.get('failed_step')}': {sub_error.get('message')}")
 
                 output_mapping = params.get('output_mapping', {})
-                sub_workflow_data = sub_final_state.get("workflow_data", {})
+                sub_workflow_data = final_sub_state.get("workflow_data", {})
                 parent_outputs = {parent_key: sub_workflow_data.get(sub_key) for sub_key, parent_key in output_mapping.items()}
-                merged_debug_log = sub_final_state.get("debug_log", [])
+                
                 debug_record = {"step_name": step_name, "type": "workflow", "status": "Completed", "duration_ms": (time.perf_counter() - start_time) * 1000, "inputs": sanitized_inputs, "outputs": parent_outputs}
-                return {"workflow_data": parent_outputs, "debug_log": [debug_record] + merged_debug_log}
+                return {"workflow_data": parent_outputs, "debug_log": [debug_record]}
+
             except Exception as e:
                 error_details = {"message": str(e), "traceback": traceback.format_exc()}
                 debug_record = {"step_name": step_name, "type": "workflow", "status": "Failed", "duration_ms": (time.perf_counter() - start_time) * 1000, "inputs": sanitized_inputs, "outputs": {}, "error": error_details}
@@ -160,31 +169,19 @@ class LangGraphBuilder:
         return workflow_node
 
     def build(self) -> Runnable:
-        """
-        Compiles the declarative YAML workflow into a LangGraph graph.
-        This method constructs a static DAG, handling dependencies, fan-in joins,
-        and terminal nodes to create a robust, race-condition-free graph.
-        """
         steps = self.workflow_def.get('steps', [])
         all_step_names = {step['name'] for step in steps}
-        
-        # 1. Add all step nodes to the graph builder first.
         for step in steps:
             step_name = step['name']
             step_params = step.get('params', {})
             node_function = self._get_node_function(step_name, step_params)
             self.graph_builder.add_node(step_name, node_function)
-
-        # 2. Identify all nodes that are used as dependencies.
         dependency_source_nodes = set()
         for step in steps:
             for dep in step.get('dependencies', []):
                 if dep in self.output_to_step_map:
                     dependency_source_nodes.add(self.output_to_step_map[dep])
-
-        # Terminal nodes are those that are never used as a dependency.
         terminal_nodes = all_step_names - dependency_source_nodes
-
         def create_conditional_function(target_step: str, required_deps: List[str]):
             def conditional_function(state: GraphState) -> str:
                 workflow_data = state.get("workflow_data", {})
@@ -193,44 +190,27 @@ class LangGraphBuilder:
                 else:
                     return END
             return conditional_function
-
-        # 3. Wire the graph by adding edges between nodes.
         for step in steps:
             step_name = step['name']
             dependencies = step.get('dependencies', [])
-
-            # If a step has no dependencies, it's an entry point from START.
             if not dependencies:
                 self.graph_builder.add_edge(START, step_name)
                 continue
-
             parent_steps = {self.output_to_step_map[dep] for dep in dependencies if dep in self.output_to_step_map}
-
-            # If a step has multiple parent dependencies, create a synchronization "join" node
-            # with a conditional edge to ensure all parents have completed.
             if len(parent_steps) > 1:
                 join_node_name = f"join_for_{step_name}"
                 if join_node_name not in self.graph_builder.nodes:
-                    # The join node is an empty function that just merges state.
                     self.graph_builder.add_node(join_node_name, lambda state: {})
-                
                 for parent_step in parent_steps:
                     self.graph_builder.add_edge(parent_step, join_node_name)
-                
                 conditional_func = create_conditional_function(step_name, dependencies)
                 path_map = {step_name: step_name, END: END}
                 self.graph_builder.add_conditional_edges(join_node_name, conditional_func, path_map)
-
-            # For a single dependency, create a direct edge.
             elif len(parent_steps) == 1:
                 parent_step = parent_steps.pop()
                 self.graph_builder.add_edge(parent_step, step_name)
-
-        # 4. Connect all identified terminal nodes to the END node.
         for node_name in terminal_nodes:
             self.graph_builder.add_edge(node_name, END)
-
-        # 5. Compile the graph into a runnable object.
         return self.graph_builder.compile()
 
     def _get_node_function(self, step_name: str, step_params: Dict[str, Any]):
