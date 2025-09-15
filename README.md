@@ -84,8 +84,6 @@ Open the new `.env` file and add your Google Gemini API Key. You can add more th
 # .env
 GEMINI_API_KEY="AIzaSy...YourFirstKey"
 #GEMINI_API_KEY="AIzaSy...YourSecondKey"
-
-MONGO_URI="mongodb://localhost:27017/"
 ```
 
 ## How to Run
