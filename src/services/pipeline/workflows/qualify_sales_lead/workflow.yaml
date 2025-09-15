@@ -1,0 +1,57 @@
+name: "Qualify Sales Lead"
+description: "Orchestrates the extraction and enrichment of a new lead to score and route it."
+
+inputs:
+  - name: "inbound_lead_message"
+    type: "text"
+    label: "Enter new lead message from contact form:"
+    default: "Hi, my name is Jane Doe from Innovate Corp. We are very interested in learning more about your enterprise solutions and pricing. My email is jane.doe@innovatecorp.com"
+
+steps:
+  # Step 1: Call the first workflow to get structured data from the raw text.
+  - name: "run_extraction_workflow"
+    type: "workflow"
+    dependencies: []
+    params:
+      workflow_name: "extract_contact_details"
+      input_mapping:
+        inbound_lead_message: "user_message"
+      output_mapping:
+        extracted_data: "initial_contact_data"
+
+  # Step 2: Use a utility 'code' step to pull just the company name from the result of Step 1.
+  # This acts as an adapter between the two sub-workflows.
+  - name: "get_company_name_from_data"
+    type: "code"
+    dependencies:
+      - "initial_contact_data"
+    params:
+      function_name: "data_extraction.GetValueFromDictStep"
+      input_key: "initial_contact_data" # The Pydantic model for the step expects a dict {'data': ..., 'key': ...}
+      output_key: "company_name_str"
+
+  # Step 3: Call the second workflow, using the company name from Step 2 as its input.
+  - name: "run_enrichment_workflow"
+    type: "workflow"
+    dependencies:
+      - "company_name_str"
+    params:
+      workflow_name: "enrich_company_profile"
+      input_mapping:
+        # The output of the 'get_company_name_from_data' step is a dict: {"value": "Innovate Corp"}
+        company_name_str: "company_name"
+      output_mapping:
+        enriched_profile: "enriched_company_data"
+
+  # Step 4: A final LLM call that uses the outputs of ALL previous steps to make a decision.
+  - name: "score_lead_llm"
+    type: "llm"
+    dependencies:
+      - "initial_contact_data"
+      - "enriched_company_data"
+    params:
+      prompt_template: "1_score_lead.txt"
+      input_mapping:
+        contact_info: "initial_contact_data"
+        company_profile: "enriched_company_data"
+      output_key: "lead_score_result"

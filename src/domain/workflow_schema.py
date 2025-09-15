@@ -8,15 +8,24 @@ class WorkflowInput(BaseModel):
     default: Any = None
 
 class StepParams(BaseModel):
-    output_key: str
+    # Common
+    output_key: Optional[str] = None # Not required for workflow steps
     input_mapping: Dict[str, str] = Field(default_factory=dict)
+    
+    # Code steps
     input_key: Optional[str] = None
     function_name: Optional[str] = None
+    
+    # LLM steps
     prompt_template: Optional[str] = None
+    
+    # Workflow steps
+    workflow_name: Optional[str] = None
+    output_mapping: Optional[Dict[str, str]] = None
 
 class WorkflowStep(BaseModel):
     name: str
-    type: Literal["llm", "code"] # 'workflow' type will be added in a later phase
+    type: Literal["llm", "code", "workflow"] # <-- ADD "workflow"
     dependencies: List[str] = Field(default_factory=list)
     params: StepParams
 
