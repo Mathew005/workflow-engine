@@ -72,8 +72,11 @@ class LangGraphBuilder:
 
     def _create_llm_node(self, step_name: str, params: Dict[str, Any]):
         async def llm_node(state: GraphState) -> Dict[str, Any]:
+            # Enforce fail-fast behavior: if an error is detected, halt execution of this node.
+            if state.get("error_info"):
+                return {}
+            
             start_time = time.perf_counter()
-            if state.get("error_info"): return {} # Implicit fail-fast
             workflow_data = state.get("workflow_data", {})
             resolved_inputs = {key: _resolve_value_from_state(workflow_data, val) for key, val in params.get('input_mapping', {}).items()}
             sanitized_inputs = sanitize_for_json(resolved_inputs)
@@ -96,8 +99,11 @@ class LangGraphBuilder:
 
     def _create_code_node(self, step_name: str, params: Dict[str, Any]):
         async def code_node(state: GraphState) -> Dict[str, Any]:
+            # Enforce fail-fast behavior: if an error is detected, halt execution of this node.
+            if state.get("error_info"):
+                return {}
+
             start_time = time.perf_counter()
-            if state.get("error_info"): return {} # Implicit fail-fast
             workflow_data = state.get("workflow_data", {})
             resolved_inputs = {
                 model_field: _resolve_value_from_state(workflow_data, state_key)
@@ -121,8 +127,11 @@ class LangGraphBuilder:
 
     def _create_workflow_node(self, step_name: str, params: Dict[str, Any]):
         async def workflow_node(state: GraphState) -> Dict[str, Any]:
+            # Enforce fail-fast behavior: if an error is detected, halt execution of this node.
+            if state.get("error_info"):
+                return {}
+
             start_time = time.perf_counter()
-            if state.get("error_info"): return {} # Implicit fail-fast
             workflow_data = state.get("workflow_data", {})
             sub_workflow_name = params['workflow_name']
             input_mapping = params.get('input_mapping', {})
@@ -151,51 +160,77 @@ class LangGraphBuilder:
         return workflow_node
 
     def build(self) -> Runnable:
-        print(f"\n[INFO] --- Building Workflow: {self.workflow_def['name']} ---")
-        print("[INFO] Execution Plan:")
-        for step in self.workflow_def.get('steps', []):
-            print(f"[INFO]   - Step: {step['name']} ({step['type']})")
-            print(f"[INFO]     Dependencies: {step.get('dependencies', [])}")
-        print("[INFO] --- Workflow Built ---\n")
+        """
+        Compiles the declarative YAML workflow into a LangGraph graph.
+        This method constructs a static DAG, handling dependencies, fan-in joins,
+        and terminal nodes to create a robust, race-condition-free graph.
+        """
+        steps = self.workflow_def.get('steps', [])
+        all_step_names = {step['name'] for step in steps}
+        
+        # 1. Add all step nodes to the graph builder first.
+        for step in steps:
+            step_name = step['name']
+            step_params = step.get('params', {})
+            node_function = self._get_node_function(step_name, step_params)
+            self.graph_builder.add_node(step_name, node_function)
 
-        # 1. Add all step nodes.
-        for step_def in self.workflow_def.get('steps', []):
-            node_func = self._get_node_function(step_def['name'], step_def['params'])
-            self.graph_builder.add_node(step_def['name'], node_func)
+        # 2. Identify all nodes that are used as dependencies.
+        dependency_source_nodes = set()
+        for step in steps:
+            for dep in step.get('dependencies', []):
+                if dep in self.output_to_step_map:
+                    dependency_source_nodes.add(self.output_to_step_map[dep])
 
-        # 2. Wire the graph with joins for fan-in dependencies.
-        all_step_names = set(self.steps_by_name.keys())
-        terminal_nodes = set(all_step_names)
+        # Terminal nodes are those that are never used as a dependency.
+        terminal_nodes = all_step_names - dependency_source_nodes
 
-        for step_def in self.workflow_def.get('steps', []):
-            step_name = step_def['name']
-            dependencies = step_def.get('dependencies', [])
-            
+        def create_conditional_function(target_step: str, required_deps: List[str]):
+            def conditional_function(state: GraphState) -> str:
+                workflow_data = state.get("workflow_data", {})
+                if all(dep in workflow_data for dep in required_deps):
+                    return target_step
+                else:
+                    return END
+            return conditional_function
+
+        # 3. Wire the graph by adding edges between nodes.
+        for step in steps:
+            step_name = step['name']
+            dependencies = step.get('dependencies', [])
+
+            # If a step has no dependencies, it's an entry point from START.
             if not dependencies:
                 self.graph_builder.add_edge(START, step_name)
                 continue
 
-            source_step_names = {self.output_to_step_map[dep_key] for dep_key in dependencies}
-            terminal_nodes -= source_step_names
-            
-            if len(source_step_names) > 1:
-                join_name = f"join__{step_name}"
-                if join_name not in self.graph_builder.nodes:
-                    self.graph_builder.add_node(join_name, lambda state: {})
-                
-                for source in source_step_names:
-                    self.graph_builder.add_edge(source, join_name)
-                self.graph_builder.add_edge(join_name, step_name)
-            else:
-                source_name = source_step_names.pop()
-                self.graph_builder.add_edge(source_name, step_name)
+            parent_steps = {self.output_to_step_map[dep] for dep in dependencies if dep in self.output_to_step_map}
 
-        # 3. Connect all terminal nodes to the finish line.
-        for node in terminal_nodes:
-            self.graph_builder.add_edge(node, END)
-        
-        # 4. Compile the graph. The entry and finish points are now correctly
-        #    defined by the edges to/from START and END.
+            # If a step has multiple parent dependencies, create a synchronization "join" node
+            # with a conditional edge to ensure all parents have completed.
+            if len(parent_steps) > 1:
+                join_node_name = f"join_for_{step_name}"
+                if join_node_name not in self.graph_builder.nodes:
+                    # The join node is an empty function that just merges state.
+                    self.graph_builder.add_node(join_node_name, lambda state: {})
+                
+                for parent_step in parent_steps:
+                    self.graph_builder.add_edge(parent_step, join_node_name)
+                
+                conditional_func = create_conditional_function(step_name, dependencies)
+                path_map = {step_name: step_name, END: END}
+                self.graph_builder.add_conditional_edges(join_node_name, conditional_func, path_map)
+
+            # For a single dependency, create a direct edge.
+            elif len(parent_steps) == 1:
+                parent_step = parent_steps.pop()
+                self.graph_builder.add_edge(parent_step, step_name)
+
+        # 4. Connect all identified terminal nodes to the END node.
+        for node_name in terminal_nodes:
+            self.graph_builder.add_edge(node_name, END)
+
+        # 5. Compile the graph into a runnable object.
         return self.graph_builder.compile()
 
     def _get_node_function(self, step_name: str, step_params: Dict[str, Any]):
