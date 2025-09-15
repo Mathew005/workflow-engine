@@ -5,7 +5,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-UI-red)](https://streamlit.io/)
 [![Gemini API](https://img.shields.io/badge/Google-Gemini%20API-blue)](https://ai.google.dev/)
 
-This project lets you build and run multi-step AI and business tasks using simple YAML files. It uses a web interface to show you a live graph of your workflow as it runs, step-by-step.
+This project lets you build and run multi-step AI and LLM tasks using simple YAML files. It uses a web interface to show you a live graph of your workflow as it runs, step-by-step.
 
 ## Features
 
