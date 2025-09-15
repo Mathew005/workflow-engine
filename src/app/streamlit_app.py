@@ -44,7 +44,7 @@ async def run_and_render_workflow(
     initial_state: dict,
     dag_placeholder,
     log_placeholder,
-    sub_dag_placeholder # <-- NEW: Dedicated placeholder for sub-dags
+    sub_dag_area # <-- NEW: Main container for all sub-dags
 ):
     st.session_state.debug_records = []
     st.session_state.sub_dags = {}
@@ -77,19 +77,20 @@ async def run_and_render_workflow(
                 parent_step, sub_workflow_name = data["parent_step"], data["sub_workflow"]
                 original_event = data["original_event"]
                 
+                # --- FIX: Create a unique placeholder for each sub-workflow ---
                 if parent_step not in st.session_state.sub_dags:
                     sub_workflow_yaml_path = workflow_path.parent.parent / sub_workflow_name / "workflow.yaml"
                     sub_workflow_dict = load_workflow_def(sub_workflow_yaml_path)
                     sub_step_names = {step['name'] for step in sub_workflow_dict.get('steps', [])}
                     
-                    # Use the dedicated placeholder for the expander
-                    with sub_dag_placeholder.container():
-                        expander = st.expander(f"Sub-Workflow Execution: `{parent_step}` (`{sub_workflow_name}`)", expanded=True)
+                    # Create the new expander inside the main sub_dag_area
+                    expander = sub_dag_area.expander(f"Sub-Workflow Execution: `{parent_step}` (`{sub_workflow_name}`)", expanded=True)
                     
                     st.session_state.sub_dags[parent_step] = {
                         "dict": sub_workflow_dict,
                         "lifecycle": {name: StepLifecycle.PENDING.value for name in sub_step_names},
-                        "placeholder": expander.empty() # Placeholder inside the expander
+                        # The placeholder is now INSIDE the unique expander
+                        "placeholder": expander.empty()
                     }
                 
                 sub_dag_state = st.session_state.sub_dags[parent_step]
@@ -104,6 +105,7 @@ async def run_and_render_workflow(
                         log_data = node_output["debug_log"][0]
                         sub_dag_state["lifecycle"][log_data["step_name"]] = log_data["status"].upper()
                 
+                # Update the unique placeholder for this specific sub-workflow
                 sub_dag_state["placeholder"].graphviz_chart(generate_dag_image(sub_dag_state["dict"], sub_dag_state["lifecycle"]))
                 await asyncio.sleep(0.01)
 
@@ -162,19 +164,18 @@ with col2:
             uploaded_file = st.file_uploader(label, type=["png", "jpg", "jpeg", "pdf"])
             initial_ui_state[input_name] = {"data": uploaded_file.getvalue(), "mime_type": uploaded_file.type} if uploaded_file else None
     
-    # Create the two placeholders for logs and sub-dags
     log_placeholder = st.empty()
-    sub_dag_placeholder = st.empty()
+    # This container will hold all the sub-workflow DAGs
+    sub_dag_area = st.container()
     
     if st.button("Run Pipeline", type="primary"):
         if any(i.type == "file" and not initial_ui_state.get(i.name) for i in workflow_def.inputs): st.error("A required file is not uploaded.")
         else:
-            # Clear placeholders and state before a new run
             log_placeholder.empty()
-            sub_dag_placeholder.empty()
+            sub_dag_area.empty() # Clear the sub-dag area for a new run
             st.session_state.sub_dags = {}
             try:
-                asyncio.run(run_and_render_workflow(resources, workflow_def, workflow_path, initial_ui_state, dag_placeholder, log_placeholder, sub_dag_placeholder))
+                asyncio.run(run_and_render_workflow(resources, workflow_def, workflow_path, initial_ui_state, dag_placeholder, log_placeholder, sub_dag_area))
             except Exception as e: st.error(f"An unexpected error occurred: {e}"); st.exception(e)
 
 st.divider()
