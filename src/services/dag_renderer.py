@@ -1,17 +1,25 @@
 import graphviz
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-def generate_dag_image(workflow_def: Dict[str, Any]):
+LIFECYCLE_COLORS = {
+    "PENDING": "#5b5b5b",    # Grey
+    "RUNNING": "#d5a43d",    # Orange/Yellow
+    "COMPLETED": "#3dd56d",  # Green (Original Accent)
+    "FAILED": "#d53d3d",     # Red
+    "DEFAULT": "#262730",   # Original Dark Color
+}
+
+def generate_dag_image(workflow_def: Dict[str, Any], step_states: Optional[Dict[str, str]] = None):
     dot = graphviz.Digraph(comment='Workflow DAG')
     dot.attr('graph', bgcolor='transparent', rankdir='LR')
-    dot.attr('node', shape='box', style='rounded,filled', fillcolor='#262730', fontcolor='white', color='#3dd56d')
+    dot.attr('node', shape='box', style='rounded,filled', fontcolor='white')
     dot.attr('edge', color='white', fontcolor='white')
 
     steps = workflow_def.get('steps', [])
     if not steps:
         return dot
 
-    dot.node('__start__', 'START', shape='ellipse', style='filled', fillcolor='#5b5b5b')
+    dot.node('__start__', 'START', shape='ellipse', style='filled', fillcolor=LIFECYCLE_COLORS["PENDING"])
 
     output_to_step_map = {
         step['params']['output_key']: step['name']
@@ -19,7 +27,6 @@ def generate_dag_image(workflow_def: Dict[str, Any]):
         if 'params' in step and step['params'].get('output_key')
     }
     
-    # Add nodes mapped from output_mapping for workflows
     output_to_step_map.update({
         output_key: step['name']
         for step in steps if step['type'] == 'workflow'
@@ -30,7 +37,11 @@ def generate_dag_image(workflow_def: Dict[str, Any]):
         step_name = step['name']
         step_type = step['type']
         
-        # --- NEW VISUAL LOGIC ---
+        # Determine node color based on its current lifecycle state
+        current_state = step_states.get(step_name, "PENDING") if step_states else "DEFAULT"
+        border_color = LIFECYCLE_COLORS["COMPLETED"] # Keep accent border
+        fill_color = LIFECYCLE_COLORS.get(current_state, LIFECYCLE_COLORS["DEFAULT"])
+
         if step_type == "workflow":
             workflow_param = step.get('params', {}).get('workflow_name', 'N/A')
             dot.node(
@@ -38,10 +49,11 @@ def generate_dag_image(workflow_def: Dict[str, Any]):
                 f"{step_name}\n(Workflow: {workflow_param})", 
                 shape='component',
                 style='rounded,filled',
-                fillcolor='#4b3dd5'
+                fillcolor=fill_color,
+                color='#8a7ff7' # Distinct border for workflows
             )
         else:
-            dot.node(step_name, f"{step_name}\n({step_type})")
+            dot.node(step_name, f"{step_name}\n({step_type})", fillcolor=fill_color, color=border_color)
 
     for step in steps:
         step_name = step['name']
