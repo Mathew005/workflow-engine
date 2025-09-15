@@ -7,7 +7,11 @@
 
 This project is a powerful, declarative AI workflow engine built on LangGraph. It enables developers to define complex, multi-step AI and business logic pipelines using simple YAML files. The engine is designed to be highly extensible, allowing for the creation of reusable components (sub-workflows) and custom Python code nodes for maximum flexibility.
 
-The entire system is observable through a Streamlit web interface, providing real-time execution logs, data flow visualization, and a clear view of the Directed Acyclic Graph (DAG) for any given workflow.
+The entire system is observable through a Streamlit web interface, which provides:
+*   Real-time, color-coded visualization of the main workflow's Directed Acyclic Graph (DAG) as it executes.
+*   Dynamic, real-time rendering of sub-workflow DAGs when they are invoked.
+*   Detailed execution logs, showing the data flowing in and out of each step.
+*   Complete error reporting and tracebacks for easier debugging.
 
 ## Core Concepts
 
@@ -29,31 +33,35 @@ workflow-engine-poc/
     ├── config/
     │   └── settings.py       # Pydantic settings management
     ├── data_layer/
+    │   └── database_manager.py # Placeholder for DB connections
     ├── domain/
+    │   ├── lifecycle.py      # Enum for step execution status
+    │   ├── models.py         # Shared Pydantic models
     │   └── workflow_schema.py # Pydantic models for YAML validation
     ├── llm_integration/
-    │   └── gemini_client.py    # Resilient client for Google Gemini
+    │   ├── gemini_client.py    # Resilient client for Google Gemini
+    │   ├── key_manager.py      # Handles API key rotation
+    │   └── prompt_loader.py    # Loads prompts from workflow packages
     └── services/
         ├── custom_code/
         │   ├── base.py           # Abstract base class for all custom nodes
         │   ├── __init__.py       # Auto-discovery script for custom nodes
         │   └── steps/            # <-- YOUR custom Python nodes go here
-        │       ├── data_enrichment.py
-        │       └── data_extraction.py
+        │       ├── business_logic.py
+        │       ├── image_processing.py
+        │       ├── lead_processing.py
+        │       └── text_processing.py
         ├── dag_renderer.py       # Logic for visualizing the workflow graph
         ├── langgraph_builder.py  # Core engine: builds and compiles LangGraph graphs
         ├── pipeline/
         │   └── workflows/        # <-- YOUR workflow packages go here
-        │       ├── extract_contact_details/
+        │       ├── 1_Basic_Text_Analysis/
         │       │   ├── prompts/
-        │       │   │   └── 1_extract_info.txt
         │       │   └── workflow.yaml
-        │       ├── enrich_company_profile/
-        │       │   └── workflow.yaml
-        │       └── qualify_sales_lead/ # A master workflow example
-        │           ├── prompts/
-        │           │   └── 1_score_lead.txt
-        │           └── workflow.yaml
+        │       ├── 2_Hybrid_Image_Analysis/
+        │       ├── 3_Orchestrator_With_Sub_Workflow/
+        │       ├── 4_Complex_Hybrid_Orchestrator/
+        │       └── 5_Advanced_Lead_Processor/
         └── workflow_orchestrator.py # Manages the streaming execution of a workflow
 ```
 
@@ -69,15 +77,16 @@ cd workflow-engine-poc
 ```
 
 #### 3. Create a Virtual Environment
-It is highly recommended to use a virtual environment.```bash
+It is highly recommended to use a virtual environment.
+```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
 #### 4. Install Dependencies
-*(You may need to create a `requirements.txt` file from your installed packages)*
 ```bash
-pip install streamlit google-generativeai pydantic pydantic-settings pymongo graphviz langchain-core langgraph```
+pip install streamlit google-generativeai pydantic pydantic-settings pymongo graphviz langchain-core langgraph nest-asyncio
+```
 
 #### 5. Set Up Environment Variables
 Copy the example environment file and fill in your API key. The engine supports multiple keys for automatic rotation in case of rate limiting or quota issues.
@@ -94,7 +103,7 @@ Now, open `.env` and add your Google Gemini API Key(s).
 GEMINI_API_KEY="AIzaSy...YourFirstKey"
 #GEMINI_API_KEY="AIzaSy...YourSecondKey"
 
-# Your MongoDB connection string (currently used as a placeholder)
+# Your MongoDB connection string
 MONGO_URI="mongodb://localhost:27017/"
 ```
 
@@ -113,178 +122,209 @@ Navigate to the local URL provided by Streamlit in your browser to access the UI
 
 ### Tutorial 1: Creating a Simple Workflow
 
-A simple workflow might take a user's message and use an LLM to analyze it.
+A simple workflow can perform multiple tasks in parallel. The `1_Basic_Text_Analysis` workflow, included in the project, demonstrates a "fan-out, fan-in" pattern where an LLM and a custom code node run simultaneously before their results are joined by a final step.
 
-**Step 1: Create the Workflow Package Directory**
+**Step 1: The `workflow.yaml`**
 
-Inside `src/services/pipeline/workflows/`, create a new directory for your workflow. The directory name will be its unique identifier.
+This file defines the structure, inputs, and steps of the workflow.
 
-```
-src/services/pipeline/workflows/
-└── sentiment_analyzer/          <-- New directory
-    └── prompts/                 <-- Prompts subdirectory
-```
-
-**Step 2: Write the `workflow.yaml`**
-
-Create a `workflow.yaml` file inside your new directory.
-
-**`src/services/pipeline/workflows/sentiment_analyzer/workflow.yaml`**
+**`src/services/pipeline/workflows/1_Basic_Text_Analysis/workflow.yaml`**
 ```yaml
-name: "Sentiment Analyzer"
-description: "A simple workflow that analyzes the sentiment of a user's message."
+name: "1. Basic Text Analysis (Fan-Out, Fan-In)"
+description: "Demonstrates parallel execution of LLM and Code steps, then joins their results."
 
 # Declare the inputs this workflow requires to start.
 # The UI will automatically generate form fields for these.
 inputs:
-  - name: "user_text"
+  - name: "text_input"
     type: "text"
-    label: "Enter text to analyze:"
-    default: "I am so happy with the new update, it's fantastic!"
+    label: "Enter a block of text to analyze:"
+    default: "The new declarative workflow engine is incredibly powerful."
 
 # Define the sequence of steps.
 steps:
-  - name: "analyze_sentiment_llm"
+  - name: "summarize_text_llm"
     type: "llm"       # This is a Large Language Model step.
     dependencies: []  # No dependencies, so it runs at the start.
     params:
-      prompt_template: "1_sentiment.txt" # The prompt file to use.
-      # Map the workflow's 'user_text' input to the prompt's '<message_to_analyze>' placeholder.
+      prompt_template: "1_summarize.txt" # The prompt file to use.
+      # Map the workflow's 'text_input' to the prompt's '<text_to_summarize>' placeholder.
       input_mapping:
-        message_to_analyze: "user_text"
+        text_to_summarize: "text_input"
       # The result of this step will be stored in the state under this key.
-      output_key: "sentiment_result"
+      output_key: "summary_result"
+
+  - name: "check_text_quality_code"
+    type: "code"      # This is a custom code step.
+    dependencies: []  # No dependencies, runs in parallel with the LLM step.
+    params:
+      function_name: "text_processing.CheckTextQualityStep"
+      input_mapping:
+        text: "text_input"
+      output_key: "quality_stats_result"
+
+  - name: "synthesize_report_llm"
+    type: "llm"
+    # This step depends on the outputs of the first two steps.
+    # It will only run after BOTH 'summary_result' and 'quality_stats_result' are available.
+    dependencies:
+      - "summary_result"
+      - "quality_stats_result"
+    params:
+      prompt_template: "2_synthesize_report.txt"
+      input_mapping:
+        summary: "summary_result"
+        statistics: "quality_stats_result"
+      output_key: "final_report"
 ```
 
-**Step 3: Write the Prompt Template**
+**Step 2: The Prompt Template**
 
-Inside the `prompts/` directory, create the prompt file referenced in your YAML.
+This is the prompt used by the `summarize_text_llm` step.
 
-**`src/services/pipeline/workflows/sentiment_analyzer/prompts/1_sentiment.txt`**
+**`src/services/pipeline/workflows/1_Basic_Text_Analysis/prompts/1_summarize.txt`**
 ```
-# ROLE
-You are a sentiment analysis expert.
-
 # TASK
-Analyze the sentiment of the following user message. Your entire output must be a single, valid JSON object. The sentiment must be one of: POSITIVE, NEGATIVE, NEUTRAL.
+Summarize the following text in a single, concise sentence.
 
-# USER MESSAGE
-<message_to_analyze>
+# TEXT
+<text_to_summarize>
 
 # OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
 {
-  "sentiment": "string",
-  "confidence_score": "number (0.0 to 1.0)"
+  "summary": "string"
 }
 ```
 
-**Step 4: Run it!**
-Save your files and refresh the Streamlit application in your browser. Your new "Sentiment Analyzer" workflow will now appear in the dropdown menu, ready to run.
+**Step 3: Run it!**
+Save your files and refresh the Streamlit application. The "1 Basic Text Analysis..." workflow will be available in the dropdown, ready to run.
 
 ### Tutorial 2: Creating a Custom Code Node
 
-Custom nodes allow you to run any Python code. Let's create a node that validates the length of a message.
+Custom nodes allow you to run any Python code. The `check_text_quality_code` step from Tutorial 1 uses the `CheckTextQualityStep` node. Here's how it's built.
 
-**Step 1: Create the Python File**
+**Step 1: The Python File**
 
-Inside `src/services/custom_code/steps/`, create a new file. The filename becomes part of the node's namespace.
+The file is located in `src/services/custom_code/steps/`. The filename (`text_processing`) becomes part of the node's namespace.
 
-**`src/services/custom_code/steps/text_validators.py`**
+**`src/services/custom_code/steps/text_processing.py`**
 
-**Step 2: Write the Custom Step Class**
+**Step 2: The Custom Step Class**
 
-In your new file, write a class that inherits from `BaseCustomStep` and implements the required contract.
+The class inherits from `BaseCustomStep` and defines Pydantic models for type-safe inputs and outputs.
 
 ```python
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+import re
 from src.services.custom_code.base import BaseCustomStep
 
 # 1. Define the Input Schema using Pydantic
-# The engine will automatically validate that the input data matches this shape.
-class IsTextTooShortInput(BaseModel):
-    text_to_validate: str
-    min_length: int = 5
+# The engine will validate that the input data matches this shape.
+class CheckTextQualityInput(BaseModel):
+    text: str
 
 # 2. Define the Output Schema using Pydantic
 # The engine will use this to structure the output.
-class IsTextTooShortOutput(BaseModel):
-    is_valid: bool
-    length: int
+class CheckTextQualityOutput(BaseModel):
+    word_count: int
+    average_word_length: float = Field(..., description="Average length of words in the text.")
 
 # 3. Implement the Step Class
-class IsTextTooShortStep(BaseCustomStep):
+class CheckTextQualityStep(BaseCustomStep):
     # Link the schemas to the class
-    InputModel = IsTextTooShortInput
-    OutputModel = IsTextTooShortOutput
+    InputModel = CheckTextQualityInput
+    OutputModel = CheckTextQualityOutput
 
     # The core logic goes in the 'execute' method
-    async def execute(self, input_data: IsTextTooShortInput) -> IsTextTooShortOutput:
-        current_length = len(input_data.text_to_validate or "")
-        is_valid = current_length >= input_data.min_length
+    async def execute(self, input_data: CheckTextQualityInput) -> CheckTextQualityOutput:
+        words = re.findall(r'\b\w+\b', input_data.text.lower())
+        word_count = len(words)
         
-        return IsTextTooShortOutput(is_valid=is_valid, length=current_length)
-```The engine will automatically discover this class and register it as `text_validators.IsTextTooShortStep`.
+        if word_count == 0:
+            return CheckTextQualityOutput(word_count=0, average_word_length=0)
 
-**Step 3: Use the Custom Node in a Workflow**
+        total_word_length = sum(len(word) for word in words)
+        avg_length = total_word_length / word_count
+        
+        return CheckTextQualityOutput(
+            word_count=word_count,
+            average_word_length=round(avg_length, 2)
+        )
+```
+The engine automatically discovers this class and registers it as `text_processing.CheckTextQualityStep`.
 
-You can now use this node in any `workflow.yaml` file.
+**Step 3: Using the Custom Node in a Workflow**
+
+As seen in Tutorial 1, you use the node by referencing its `function_name` and mapping workflow state keys to its `InputModel` fields.
 
 ```yaml
 steps:
-  - name: "validate_message_length"
-    type: "code"  # This is a Custom Code Node step.
-    dependencies: []
+  - name: "check_text_quality_code"
+    type: "code"
     params:
       # The name is <filename>.<ClassName>
-      function_name: "text_validators.IsTextTooShortStep"
-      # The value from this state key will be passed as the FIRST field
-      # in the InputModel (i.e., 'text_to_validate').
-      input_key: "user_text"
-      output_key: "validation_output"
-```
+      function_name: "text_processing.CheckTextQualityStep"
+      # Map keys from the workflow state to fields in the InputModel.
+      # 'text_input' (from workflow) maps to 'text' (in CheckTextQualityInput)
+      input_mapping:
+        text: "text_input"
+      output_key: "quality_stats_result"```
 
 ### Tutorial 3: Creating a Master Workflow (Sub-Workflows)
 
-Master workflows compose other workflows. Let's use our `sentiment_analyzer` and `text_validators` to create a master workflow.
+Master workflows compose other workflows. The `3_Orchestrator_With_Sub_Workflow` example calls the `1_Basic_Text_Analysis` workflow as a single step.
 
-**Step 1: Create a New Master Workflow Package**
+**The Master `workflow.yaml`**
 
-Create a new workflow package directory, e.g., `src/services/pipeline/workflows/validation_and_analysis/`.
+This YAML defines a step with `type: workflow`, treating an entire workflow package as a reusable component.
 
-**Step 2: Write the Master `workflow.yaml`**
-
-This YAML will define steps with `type: workflow`.
-
-**`src/services/pipeline/workflows/validation_and_analysis/workflow.yaml`**
+**`src/services/pipeline/workflows/3_Orchestrator_With_Sub_Workflow/workflow.yaml`**
 ```yaml
-name: "Validation and Analysis Orchestrator"
-description: "A master workflow that validates input text before analyzing its sentiment."
+name: "3. Orchestrator with Sub-Workflow"
+description: "Demonstrates composing workflows by calling the 'Basic Text Analysis' workflow as a single step."
 
 inputs:
-  - name: "master_input_text"
+  - name: "customer_review_text"
     type: "text"
-    label: "Enter text to validate and analyze:"
+    label: "Enter a customer review:"
 
 steps:
-  - name: "run_validation"
-    type: "code" # We can mix and match step types
+  - name: "translate_input_llm"
+    type: "llm"
     dependencies: []
     params:
-      function_name: "text_validators.IsTextTooShortStep"
-      input_key: "master_input_text"
-      output_key: "validation_result" # Output will be e.g., {"is_valid": true, "length": 25}
+      prompt_template: "1_translate.txt"
+      input_mapping:
+        text_to_translate: "customer_review_text"
+      output_key: "translated_text" # Output: {"english_translation": "..."}
 
-  - name: "run_sentiment_analysis"
+  - name: "run_text_analysis_sub_workflow"
     type: "workflow" # This step calls another workflow.
     dependencies:
-      - "validation_result" # This step will ONLY run if 'run_validation' is successful.
+      - "translated_text"
     params:
       # The directory name of the workflow to call.
-      workflow_name: "sentiment_analyzer"
+      workflow_name: "1_Basic_Text_Analysis"
+      
       # Map a key from the parent state to the required input of the sub-workflow.
+      # The value of 'translated_text.english_translation' from the parent state
+      # will be passed as the 'text_input' to the sub-workflow.
       input_mapping:
-        master_input_text: "user_text"
+        translated_text.english_translation: "text_input"
+        
       # Map an output key from the sub-workflow's state back to the parent state.
+      # The 'final_report' from the sub-workflow is saved as 'analysis_report' here.
       output_mapping:
-        sentiment_result: "final_sentiment_analysis"
+        final_report: "analysis_report"
+  
+  - name: "determine_final_action_code"
+    type: "code"
+    dependencies:
+      - "analysis_report"
+    params:
+      function_name: "business_logic.DetermineFinalActionStep"
+      input_mapping:
+        report: "analysis_report"
+      output_key: "final_action"
 ```
