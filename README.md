@@ -15,6 +15,10 @@ This project lets you build and run multi-step AI and LLM tasks using simple YAM
 *   **Reusable Workflows:** Call one workflow from another, allowing you to build complex systems from smaller, reusable parts.
 *   **View Data Flow:** Check the inputs and outputs of every step in the web UI to easily debug your workflows.
 
+## DAG Visualization
+
+![Run](https://github.com/user-attachments/assets/c1908375-d984-4040-8547-26305c8bb30e)
+
 ## Project Structure
 
 ```text
