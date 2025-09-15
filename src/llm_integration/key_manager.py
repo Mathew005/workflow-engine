@@ -95,21 +95,20 @@ class ApiKeyManager:
     def rotate_to_next_key(self) -> Optional[str]:
         """
         Deactivates the current key, activates the next one, and saves the state.
-        Returns the new key, or None if all keys have been exhausted.
+        If the end of the list is reached, it wraps around to the first key.
+        Returns the new key, or None if there are no keys.
         """
         with self._lock:
-            if self.current_key_index is None:
+            if not self.keys:
                 return None
 
-            self.keys[self.current_key_index]["is_active"] = False
-            
-            next_index = self.current_key_index + 1
-            if next_index >= len(self.keys):
-                print("[ERROR] All API keys have been exhausted.")
-                self.current_key_index = None
-                self._save_keys() # Save the state where all keys are commented out
-                return None
-            
+            if self.current_key_index is not None:
+                self.keys[self.current_key_index]["is_active"] = False
+                next_index = (self.current_key_index + 1) % len(self.keys)
+            else:
+                # If no key is currently active, start from the first one.
+                next_index = 0
+
             self.current_key_index = next_index
             self.keys[self.current_key_index]["is_active"] = True
             
