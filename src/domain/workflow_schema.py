@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Literal, Optional
 
 class WorkflowInput(BaseModel):
     name: str
-    type: Literal["text", "file"]
+    type: Literal["text", "file", "json"]
     label: str
     default: Any = None
 
@@ -22,7 +22,7 @@ class StepParams(BaseModel):
     workflow_name: Optional[str] = None
     output_mapping: Optional[Dict[str, str]] = None
 
-    # --- NEW: API steps ---
+    # API steps
     method: Optional[Literal["GET", "POST", "PUT", "DELETE"]] = None
     endpoint: Optional[str] = None
     headers: Optional[Dict[str, Any]] = None
@@ -30,7 +30,7 @@ class StepParams(BaseModel):
 
 class WorkflowStep(BaseModel):
     name: str
-    type: Literal["llm", "code", "workflow", "api"] 
+    type: Literal["llm", "code", "workflow", "api"]
     dependencies: List[str] = Field(default_factory=list)
     params: StepParams
 
