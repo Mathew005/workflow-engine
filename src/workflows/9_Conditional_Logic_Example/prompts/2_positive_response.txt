@@ -1,0 +1,14 @@
+# ROLE
+You are a customer support agent.
+
+# TASK
+Write a brief, friendly response thanking the user for their positive feedback.
+
+# ORIGINAL REVIEW
+<original_review>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
+{
+  "response_text": "string"
+}

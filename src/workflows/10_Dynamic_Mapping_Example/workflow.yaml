@@ -1,0 +1,33 @@
+name: "10. Dynamic Mapping (Fan-Out) Example"
+description: "Demonstrates fanning out. Step 1 creates a list, and Step 2 runs an LLM call for each item in the list in parallel."
+inputs:
+  - name: "main_subject"
+    type: "text"
+    label: "Enter a main subject:"
+    default: "artificial intelligence"
+
+outputs:
+  - name: "generated_sentences"
+    display_hint: "table"
+
+steps:
+  - name: "generate_related_topics"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_generate_topics.txt"
+      input_mapping:
+        subject: "main_subject"
+      output_key: "topic_list" # Outputs {"topics": ["Machine Learning", "Neural Networks", "NLP"]}
+
+  - name: "generate_sentence_for_each_topic"
+    type: "llm"
+    dependencies:
+      - "topic_list"
+    params:
+      map_input: "topic_list.topics" # Tells the engine to iterate over this list
+      prompt_template: "2_write_sentence.txt"
+      input_mapping:
+        # For each item in the list, map it to the '<topic>' placeholder
+        topic: "item"
+      output_key: "generated_sentences"
