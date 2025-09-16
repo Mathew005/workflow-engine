@@ -1,9 +1,11 @@
 import json
 import yaml
 import traceback
+import httpx # <-- NEW IMPORT
 from typing import TypedDict, List, Dict, Any, Annotated, Set
 import operator
 import time
+import re # <-- NEW IMPORT
 from pathlib import Path
 
 from langgraph.graph import StateGraph, START, END
@@ -35,7 +37,7 @@ def _resolve_value_from_state(state_data: Dict[str, Any], key_string: str) -> An
         parent_key, child_key = key_string.split('.', 1)
         parent_value = state_data.get(parent_key)
         if isinstance(parent_value, dict):
-            return parent_value.get(child_key)
+            return _resolve_value_from_state(parent_value, child_key) # Recursive call
         return None
     if key_string.startswith("'") and key_string.endswith("'"):
         return key_string[1:-1]
@@ -50,6 +52,25 @@ class LangGraphBuilder:
         self.output_to_step_map = self._build_output_map()
         self.steps_by_name = {step['name']: step for step in self.workflow_def.get('steps', [])}
 
+    # --- NEW: Helper for resolving placeholders in API calls ---
+    def _resolve_placeholders(self, data_structure: Any, state_data: Dict[str, Any]) -> Any:
+        if isinstance(data_structure, dict):
+            return {k: self._resolve_placeholders(v, state_data) for k, v in data_structure.items()}
+        if isinstance(data_structure, list):
+            return [self._resolve_placeholders(v, state_data) for v in data_structure]
+        if isinstance(data_structure, str):
+            for match in re.finditer(r'<([^>]+)>', data_structure):
+                placeholder = match.group(1)
+                resolved_value = _resolve_value_from_state(state_data, placeholder)
+                
+                # If the string IS the placeholder, replace it with the potentially non-string value.
+                if data_structure == f"<{placeholder}>":
+                    return resolved_value
+                
+                # Otherwise, cast to string and substitute.
+                data_structure = data_structure.replace(f"<{placeholder}>", str(resolved_value))
+        return data_structure
+    
     def _build_output_map(self) -> Dict[str, str]:
         output_map = {}
         for step in self.workflow_def.get('steps', []):
@@ -72,6 +93,7 @@ class LangGraphBuilder:
 
     def _create_llm_node(self, step_name: str, params: Dict[str, Any]):
         async def llm_node(state: GraphState) -> Dict[str, Any]:
+            # ... (implementation is unchanged)
             if state.get("error_info"): return {}
             start_time = time.perf_counter()
             workflow_data = state.get("workflow_data", {})
@@ -96,6 +118,7 @@ class LangGraphBuilder:
 
     def _create_code_node(self, step_name: str, params: Dict[str, Any]):
         async def code_node(state: GraphState) -> Dict[str, Any]:
+            # ... (implementation is unchanged)
             if state.get("error_info"): return {}
             start_time = time.perf_counter()
             workflow_data = state.get("workflow_data", {})
@@ -121,6 +144,7 @@ class LangGraphBuilder:
 
     def _create_workflow_node(self, step_name: str, params: Dict[str, Any]):
         async def workflow_node(state: GraphState) -> Dict[str, Any]:
+            # ... (implementation is unchanged)
             if state.get("error_info"): return {}
             start_time = time.perf_counter()
             workflow_data = state.get("workflow_data", {})
@@ -135,40 +159,70 @@ class LangGraphBuilder:
             
             try:
                 sub_graph = self._compile_sub_workflow(sub_workflow_name)
-
-                # --- FIX: SEPARATE STREAMING FROM STATE LOGIC ---
-                
-                # 1. Stream events for UI visualization only.
-                # We fully consume the async generator but don't use it for the final state.
                 async for event in sub_graph.astream_events(sub_initial_state, version="v1"):
-                    repackaged_event = {
-                        "parent_step": step_name,
-                        "sub_workflow": sub_workflow_name,
-                        "original_event": event
-                    }
+                    repackaged_event = {"parent_step": step_name, "sub_workflow": sub_workflow_name, "original_event": event}
                     await self.resources.emit_event({"type": "sub_workflow_event", "data": repackaged_event})
-
-                # 2. Get the definitive final state using ainvoke for correctness.
                 final_sub_state = await sub_graph.ainvoke(sub_initial_state)
-
                 if final_sub_state.get("error_info"):
                     sub_error = final_sub_state["error_info"][0]
                     raise RuntimeError(f"Sub-workflow '{sub_workflow_name}' failed at step '{sub_error.get('failed_step')}': {sub_error.get('message')}")
-
                 output_mapping = params.get('output_mapping', {})
                 sub_workflow_data = final_sub_state.get("workflow_data", {})
                 parent_outputs = {parent_key: sub_workflow_data.get(sub_key) for sub_key, parent_key in output_mapping.items()}
-                
                 debug_record = {"step_name": step_name, "type": "workflow", "status": "Completed", "duration_ms": (time.perf_counter() - start_time) * 1000, "inputs": sanitized_inputs, "outputs": parent_outputs}
                 return {"workflow_data": parent_outputs, "debug_log": [debug_record]}
-
             except Exception as e:
                 error_details = {"message": str(e), "traceback": traceback.format_exc()}
                 debug_record = {"step_name": step_name, "type": "workflow", "status": "Failed", "duration_ms": (time.perf_counter() - start_time) * 1000, "inputs": sanitized_inputs, "outputs": {}, "error": error_details}
                 return {"debug_log": [debug_record], "error_info": [{"failed_step": step_name, **error_details}]}
         return workflow_node
 
+    # --- NEW: Node builder for API steps ---
+    def _create_api_node(self, step_name: str, params: Dict[str, Any]):
+        async def api_node(state: GraphState) -> Dict[str, Any]:
+            if state.get("error_info"): return {}
+            start_time = time.perf_counter()
+            workflow_data = state.get("workflow_data", {})
+            
+            # Resolve placeholders in all relevant fields
+            resolved_endpoint = self._resolve_placeholders(params.get('endpoint', ''), workflow_data)
+            resolved_headers = self._resolve_placeholders(params.get('headers', {}), workflow_data)
+            resolved_body = self._resolve_placeholders(params.get('body', {}), workflow_data)
+            
+            method = params.get('method', 'GET').upper()
+            output_key = params['output_key']
+            
+            sanitized_inputs = sanitize_for_json({
+                "method": method, "endpoint": resolved_endpoint,
+                "headers": resolved_headers, "body": resolved_body
+            })
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.request(
+                        method=method,
+                        url=resolved_endpoint,
+                        headers=resolved_headers,
+                        json=resolved_body if method in ["POST", "PUT"] else None
+                    )
+                    response.raise_for_status() # Raise exception for 4xx/5xx errors
+                    response_json = response.json()
+
+                debug_record = {"step_name": step_name, "type": "api", "status": "Completed", "duration_ms": (time.perf_counter() - start_time) * 1000, "inputs": sanitized_inputs, "outputs": {output_key: response_json}}
+                return {"workflow_data": {output_key: response_json}, "debug_log": [debug_record]}
+
+            except httpx.HTTPStatusError as e:
+                error_details = {"message": f"API call failed with status {e.response.status_code}: {e.response.text}", "traceback": traceback.format_exc()}
+                debug_record = {"step_name": step_name, "type": "api", "status": "Failed", "duration_ms": (time.perf_counter() - start_time) * 1000, "inputs": sanitized_inputs, "outputs": {}, "error": error_details}
+                return {"debug_log": [debug_record], "error_info": [{"failed_step": step_name, **error_details}]}
+            except Exception as e:
+                error_details = {"message": str(e), "traceback": traceback.format_exc()}
+                debug_record = {"step_name": step_name, "type": "api", "status": "Failed", "duration_ms": (time.perf_counter() - start_time) * 1000, "inputs": sanitized_inputs, "outputs": {}, "error": error_details}
+                return {"debug_log": [debug_record], "error_info": [{"failed_step": step_name, **error_details}]}
+        return api_node
+
     def build(self) -> Runnable:
+        # ... (implementation is unchanged)
         steps = self.workflow_def.get('steps', [])
         all_step_names = {step['name'] for step in steps}
         for step in steps:
@@ -218,4 +272,5 @@ class LangGraphBuilder:
         if step_type == 'llm': return self._create_llm_node(step_name, step_params)
         if step_type == 'code': return self._create_code_node(step_name, step_params)
         if step_type == 'workflow': return self._create_workflow_node(step_name, step_params)
+        if step_type == 'api': return self._create_api_node(step_name, step_params) # <-- NEW
         raise ValueError(f"Unknown step type: {step_type}")

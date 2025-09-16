@@ -1,0 +1,48 @@
+name: "6. API Integration Example"
+description: "Demonstrates using the new 'api' step type to perform GET and POST requests to a public test API."
+inputs:
+  - name: "user_id"
+    type: "text"
+    label: "User ID to fetch posts for:"
+    default: "1"
+  - name: "post_topic"
+    type: "text"
+    label: "Topic for a new blog post:"
+    default: "declarative AI workflows"
+
+steps:
+  - name: "get_user_posts_api"
+    type: "api"
+    dependencies: []
+    params:
+      method: "GET"
+      # The user_id input is dynamically inserted into the URL.
+      endpoint: "https://jsonplaceholder.typicode.com/posts?userId=<user_id>"
+      output_key: "user_posts_list"
+
+  - name: "prepare_post_title_llm"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_prepare_post_title.txt"
+      input_mapping:
+        topic: "post_topic"
+      output_key: "prepared_post" # Outputs: {"title": "...", "body": "..."}
+
+  - name: "create_new_post_api"
+    type: "api"
+    dependencies:
+      - "user_posts_list"      # Ensures we fetch before we create.
+      - "prepared_post"        # Wait for the LLM to generate content.
+    params:
+      method: "POST"
+      endpoint: "https://jsonplaceholder.typicode.com/posts"
+      headers:
+        Content-type: "application/json; charset=UTF-8"
+      # The body is constructed dynamically from the workflow state.
+      # The engine will resolve these placeholders before sending the JSON payload.
+      body:
+        title: "<prepared_post.title>"
+        body: "<prepared_post.body>"
+        userId: "<user_id>"
+      output_key: "api_post_response"

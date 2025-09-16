@@ -1,0 +1,12 @@
+# TASK
+Based on the provided topic, generate a compelling title and a short body for a blog post.
+
+# TOPIC
+<topic>
+
+# OUTPUT SCHEMA
+Your entire output must be a single, valid JSON object.
+{
+  "title": "string",
+  "body": "string (A short, one-sentence body for the post.)"
+}
