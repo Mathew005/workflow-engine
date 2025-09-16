@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any
 import random
 
-from src.services.custom_code.base import BaseCustomStep
+from src.custom_code.base import BaseCustomStep
 
 # --- Step A ---
 class ValidateEmailInput(BaseModel):

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any
 
-from src.services.custom_code.base import BaseCustomStep
+from src.custom_code.base import BaseCustomStep
 
 class ExtractImageMetadataInput(BaseModel):
     # The engine passes file uploads as a dict with 'data' and 'mime_type'

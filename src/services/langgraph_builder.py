@@ -13,7 +13,7 @@ from langchain_core.runnables import Runnable
 
 from src.services.pipeline.resource_provider import ResourceProvider
 from src.llm_integration.prompt_loader import load_prompt_template
-from src.services.custom_code import CODE_STEP_REGISTRY
+from src.custom_code import CODE_STEP_REGISTRY
 
 COMPILED_WORKFLOW_CACHE: Dict[str, Runnable] = {}
 

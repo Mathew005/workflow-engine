@@ -20,7 +20,7 @@ def _register_steps():
 
         relative_path = f.relative_to(steps_base_dir)
         namespace = ".".join(relative_path.with_suffix("").parts)
-        module_name = f"src.services.custom_code.steps.{namespace}"
+        module_name = f"src.custom_code.steps.{namespace}"
 
         try:
             module = importlib.import_module(module_name)

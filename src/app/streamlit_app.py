@@ -136,7 +136,7 @@ if 'current_workflow_name' not in st.session_state: st.session_state.current_wor
 col1, col2 = st.columns([1, 2])
 with col1:
     st.subheader("Workflow Configuration")
-    workflow_dir = "src/services/pipeline/workflows"
+    workflow_dir = "src/workflows"
     available_workflows = get_available_workflows(workflow_dir)
     if not available_workflows: st.error(f"No workflow packages found in `{workflow_dir}`."); st.stop()
     selected_workflow_name = st.selectbox("Choose a workflow:", options=list(available_workflows.keys()))

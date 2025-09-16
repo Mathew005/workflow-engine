@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any
 import re
 
-from src.services.custom_code.base import BaseCustomStep
+from src.custom_code.base import BaseCustomStep
 
 class CheckTextQualityInput(BaseModel):
     text: str
