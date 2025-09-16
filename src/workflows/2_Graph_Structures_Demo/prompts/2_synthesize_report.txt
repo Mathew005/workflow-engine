@@ -1,0 +1,12 @@
+# TASK
+Combine the sentiment, hashtags, and text statistics into a brief, one-paragraph engagement report.
+
+# DATA
+- Sentiment Analysis: <sentiment>
+- Extracted Hashtags: <hashtags>
+- Text Statistics: <stats>
+
+# OUTPUT SCHEMA
+{
+  "report_paragraph": "string"
+}

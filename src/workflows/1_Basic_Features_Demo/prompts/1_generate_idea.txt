@@ -1,0 +1,11 @@
+# TASK
+Generate a compelling title and a one-sentence summary for a blog post about the given topic.
+
+# TOPIC
+<topic>
+
+# OUTPUT SCHEMA
+{
+  "title": "string",
+  "summary": "string"
+}

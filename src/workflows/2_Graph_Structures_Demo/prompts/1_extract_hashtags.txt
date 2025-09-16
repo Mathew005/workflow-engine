@@ -1,0 +1,10 @@
+# TASK
+Extract a list of all hashtags (words starting with #) from the text.
+
+# TEXT
+<text>
+
+# OUTPUT SCHEMA
+{
+  "hashtags": ["string"]
+}

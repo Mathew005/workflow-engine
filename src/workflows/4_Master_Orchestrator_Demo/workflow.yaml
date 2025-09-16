@@ -1,0 +1,40 @@
+name: "4. Master Orchestrator Demo"
+description: "Demonstrates composition by calling other workflows as sub-workflows."
+inputs:
+  - name: "concept"
+    type: "text"
+    label: "Enter a high-level concept:"
+    default: "AI in healthcare"
+
+steps:
+  - name: "develop_concept_into_idea"
+    type: "workflow"
+    dependencies: []
+    params:
+      workflow_name: "1_Basic_Features_Demo"
+      input_mapping:
+        concept: "topic"
+      output_mapping:
+        article_idea: "developed_idea"
+
+  - name: "analyze_idea_for_engagement"
+    type: "workflow"
+    dependencies:
+      - "developed_idea"
+    params:
+      workflow_name: "2_Graph_Structures_Demo"
+      input_mapping:
+        developed_idea.summary: "social_media_post"
+      output_mapping:
+        final_report: "engagement_prediction"
+  
+  - name: "final_publishing_decision"
+    type: "llm"
+    dependencies:
+      - "engagement_prediction"
+    params:
+      prompt_template: "1_final_decision.txt"
+      input_mapping:
+        idea: "developed_idea"
+        report: "engagement_prediction"
+      output_key: "final_decision"

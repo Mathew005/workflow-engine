@@ -1,8 +1,0 @@
-# TASK
-Generate a list of 3 distinct sub-topics related to the main subject.
-
-# SUBJECT
-<subject>
-
-# OUTPUT SCHEMA
-{"topics": ["string", "string", "string"]}

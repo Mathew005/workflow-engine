@@ -1,0 +1,46 @@
+name: "5. Multimodal Analysis"
+description: "Demonstrates using a file (image) as input, combining multimodal LLM analysis with parallel data extraction."
+inputs:
+  - name: "image_upload"
+    type: "file"
+    label: "Upload an image for analysis:"
+  - name: "user_prompt"
+    type: "text"
+    label: "What should I look for in the image?"
+    default: "Describe the main subject and overall mood of this image."
+
+outputs:
+  - name: "final_alt_text"
+    display_hint: "markdown"
+
+steps:
+  - name: "describe_image_llm"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_describe_image.txt"
+      input_mapping:
+        image_to_describe: "image_upload"
+        user_prompt: "user_prompt"
+      output_key: "image_description"
+
+  - name: "extract_metadata_code"
+    type: "code"
+    dependencies: []
+    params:
+      function_name: "image_processing.ExtractImageMetadataStep"
+      input_mapping:
+        image_file: "image_upload"
+      output_key: "image_metadata"
+
+  - name: "synthesize_alt_text_llm"
+    type: "llm"
+    dependencies:
+      - "image_description"
+      - "image_metadata"
+    params:
+      prompt_template: "2_synthesize_alt_text.txt"
+      input_mapping:
+        description: "image_description.description"
+        metadata: "image_metadata"
+      output_key: "final_alt_text"

@@ -1,0 +1,10 @@
+# TASK
+The following article titles are too short on average. Suggest 2-3 specific sub-topics that could be added to expand them into more comprehensive posts. Format the output as Markdown.
+
+# TITLES
+<titles>
+
+# OUTPUT SCHEMA
+{
+  "recommendation": "string (Markdown formatted)"
+}

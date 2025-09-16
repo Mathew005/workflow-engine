@@ -1,0 +1,62 @@
+name: "3. Advanced Logic Demo"
+description: "Showcases dynamic mapping (fan-out) and conditional routing (branching)."
+inputs:
+  - name: "article_titles"
+    type: "json"
+    label: "Enter a list of article titles (JSON):"
+    default:
+      - "A Brief Guide to Neural Networks"
+      - "The Economic Implications of Large Language Models and the Future of Automated Content Creation"
+      - "Getting Started with Python"
+      - "Advanced Quantum Computing Concepts for Enterprise Solutions"
+
+outputs:
+  - name: "final_recommendation"
+    display_hint: "markdown"
+
+steps:
+  - name: "get_length_of_each_title"
+    type: "code"
+    dependencies: []
+    params:
+      map_input: "article_titles"
+      function_name: "content_processing.ValidateTitleStep"
+      input_mapping:
+        title: "item" # The keyword 'item' refers to each element in the list
+      output_key: "title_lengths" # This will be a list of {"is_valid": ..., "char_count": ...}
+
+  - name: "calculate_average_length"
+    type: "code"
+    dependencies:
+      - "title_lengths"
+    params:
+      function_name: "content_processing.CalculateAverageLengthStep"
+      input_mapping:
+        articles: "title_lengths"
+      output_key: "average_analysis" # Outputs {"average_length": ..., "decision": "short" or "long"}
+
+  - name: "content_strategy_router"
+    type: "conditional_router"
+    dependencies:
+      - "average_analysis"
+    params:
+      condition_key: "average_analysis.decision"
+      routing_map:
+        "short": "suggest_expansions"
+        "long": "suggest_summaries"
+  
+  - name: "suggest_expansions"
+    type: "llm"
+    params:
+      prompt_template: "1_suggest_expansions.txt"
+      input_mapping:
+        titles: "article_titles"
+      output_key: "final_recommendation"
+  
+  - name: "suggest_summaries"
+    type: "llm"
+    params:
+      prompt_template: "2_suggest_summaries.txt"
+      input_mapping:
+        titles: "article_titles"
+      output_key: "final_recommendation"

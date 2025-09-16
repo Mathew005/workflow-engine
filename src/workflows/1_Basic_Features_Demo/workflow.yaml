@@ -1,0 +1,36 @@
+name: "1. Basic Features Demo"
+description: "Showcases the fundamental step types: LLM, Custom Code, and API calls in a sequence."
+inputs:
+  - name: "topic"
+    type: "text"
+    label: "Enter a topic for an article:"
+    default: "The impact of renewable energy on global economies"
+
+steps:
+  - name: "generate_article_idea"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_generate_idea.txt"
+      input_mapping:
+        topic: "topic"
+      output_key: "article_idea" # Outputs {"title": "...", "summary": "..."}
+
+  - name: "validate_title_length"
+    type: "code"
+    dependencies:
+      - "article_idea"
+    params:
+      function_name: "content_processing.ValidateTitleStep"
+      input_mapping:
+        title: "article_idea.title"
+      output_key: "title_validation"
+
+  - name: "fetch_related_post"
+    type: "api"
+    dependencies:
+      - "title_validation"
+    params:
+      method: "GET"
+      endpoint: "https://jsonplaceholder.typicode.com/posts/1"
+      output_key: "related_post_data"

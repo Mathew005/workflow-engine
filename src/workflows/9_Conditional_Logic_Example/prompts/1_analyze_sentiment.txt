@@ -1,8 +1,0 @@
-# TASK
-Analyze the sentiment of the following review. The sentiment must be either "Positive" or "Negative".
-
-# REVIEW
-<review>
-
-# OUTPUT SCHEMA
-{"sentiment": "string"}

@@ -1,0 +1,10 @@
+# TASK
+The following article titles are very long on average. Suggest a shorter, more SEO-friendly alternative for each. Format the output as a Markdown list.
+
+# TITLES
+<titles>
+
+# OUTPUT SCHEMA
+{
+  "recommendation": "string (Markdown formatted)"
+}

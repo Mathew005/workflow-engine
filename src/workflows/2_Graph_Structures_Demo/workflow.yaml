@@ -1,0 +1,49 @@
+name: "2. Graph Structures Demo"
+description: "Demonstrates parallel execution (fan-out) and synchronization (fan-in) of different step types."
+inputs:
+  - name: "social_media_post"
+    type: "text"
+    label: "Enter a social media post to analyze:"
+    default: "Just launched our new AI-powered workflow engine! It's going to change the game for developers building complex apps. #AI #DeveloperTools #Innovation"
+
+steps:
+  - name: "analyze_sentiment"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "analyze_sentiment.txt" # This uses the SHARED prompt
+      input_mapping:
+        text_to_analyze: "social_media_post"
+      output_key: "sentiment_result"
+
+  - name: "extract_hashtags"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_extract_hashtags.txt"
+      input_mapping:
+        text: "social_media_post"
+      output_key: "hashtags_result"
+
+  - name: "get_text_statistics"
+    type: "code"
+    dependencies: []
+    params:
+      function_name: "text_analysis.GetTextStatsStep"
+      input_mapping:
+        text: "social_media_post"
+      output_key: "stats_result"
+
+  - name: "synthesize_engagement_report"
+    type: "llm"
+    dependencies:
+      - "sentiment_result"
+      - "hashtags_result"
+      - "stats_result"
+    params:
+      prompt_template: "2_synthesize_report.txt"
+      input_mapping:
+        sentiment: "sentiment_result"
+        hashtags: "hashtags_result.hashtags"
+        stats: "stats_result"
+      output_key: "final_report"

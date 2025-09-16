@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, AsyncGenerator, Dict, Any
 from pathlib import Path
 import asyncio
+import uuid
+from datetime import datetime
 import time
 
 from src.llm_integration.gemini_client import GeminiClient
@@ -17,8 +19,8 @@ async def run_workflow_streaming(
     initial_state: dict
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Runs the full workflow, yielding events for logs, lifecycle changes,
-    and sub-workflow events.
+    Runs the full workflow, yielding events and ensuring a graceful shutdown
+    of all background tasks.
     """
     gemini_client = GeminiClient()
     resources.set_gemini_client(gemini_client)
@@ -45,33 +47,48 @@ async def run_workflow_streaming(
     graph_task = asyncio.create_task(stream_graph_events())
     sub_workflow_task = asyncio.create_task(stream_sub_workflow_events())
 
-    stop_count = 0
-    while stop_count < 1:
-        event_wrapper = await merged_stream_queue.get()
-        if event_wrapper is None:
-            stop_count += 1; continue
+    try:
+        stop_count = 0
+        while stop_count < 1:
+            event_wrapper = await merged_stream_queue.get()
+            if event_wrapper is None:
+                stop_count += 1
+                continue
 
-        source, payload = event_wrapper["source"], event_wrapper["payload"]
+            source, payload = event_wrapper["source"], event_wrapper["payload"]
 
-        if source == "graph":
-            event_name = payload["event"]
-            if event_name == "on_chain_start" and payload["name"] != "__root__":
-                yield {"type": "lifecycle_update", "data": {"step_name": payload["name"], "status": "RUNNING"}}
+            if source == "graph":
+                event_name = payload["event"]
+                if event_name == "on_chain_start" and payload["name"] != "__root__":
+                    yield {"type": "lifecycle_update", "data": {"step_name": payload["name"], "status": "RUNNING"}}
+                
+                elif event_name == "on_chain_end":
+                    node_output = payload["data"].get("output")
+                    if isinstance(node_output, dict) and "debug_log" in node_output and node_output["debug_log"]:
+                        log_data = node_output["debug_log"][0]
+                        log_data['timestamp'] = time.time()
+                        yield {"type": "log", "data": log_data}
+                        yield {"type": "lifecycle_update", "data": {"step_name": log_data["step_name"], "status": log_data["status"].upper()}}
+                
+                elif event_name == "on_graph_end":
+                    final_state = payload["data"].get("output")
+                    yield {"type": "result", "data": final_state}
+                    # No longer saving to DB, so this part is clean.
             
-            elif event_name == "on_chain_end":
-                node_output = payload["data"].get("output")
-                if isinstance(node_output, dict) and "debug_log" in node_output and node_output["debug_log"]:
-                    log_data = node_output["debug_log"][0]
-                    log_data['timestamp'] = time.time()
-                    yield {"type": "log", "data": log_data}
-                    yield {"type": "lifecycle_update", "data": {"step_name": log_data["step_name"], "status": log_data["status"].upper()}}
-            
-            elif event_name == "on_graph_end":
-                final_state = payload["data"].get("output")
-                yield {"type": "result", "data": final_state}
+            elif source == "sub_workflow":
+                yield payload
+    
+    finally:
+        # --- THIS IS THE DEFINITIVE FIX ---
+        # This block ensures all background tasks are properly cleaned up.
         
-        elif source == "sub_workflow":
-            yield payload
-
-    await event_queue.put(None)
-    await asyncio.gather(graph_task, sub_workflow_task)
+        # 1. Stop the sub_workflow listener gracefully.
+        await event_queue.put(None)
+        
+        # 2. Cancel the main tasks.
+        graph_task.cancel()
+        sub_workflow_task.cancel()
+        
+        # 3. Wait for them to acknowledge the cancellation.
+        # return_exceptions=True prevents errors from being raised if a task is already finished.
+        await asyncio.gather(graph_task, sub_workflow_task, return_exceptions=True)

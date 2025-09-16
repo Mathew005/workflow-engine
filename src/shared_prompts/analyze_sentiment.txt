@@ -1,0 +1,14 @@
+# ROLE
+You are an expert in sentiment analysis.
+
+# TASK
+Analyze the sentiment of the following text. The sentiment must be one of: "Positive", "Negative", "Neutral".
+
+# TEXT
+<text_to_analyze>
+
+# OUTPUT SCHEMA
+{
+  "sentiment": "string",
+  "confidence_score": "number (0.0 to 1.0)"
+}

@@ -1,8 +1,0 @@
-# TASK
-Write a single, brief, descriptive sentence about the following topic.
-
-# TOPIC
-<topic>
-
-# OUTPUT SCHEMA
-{"sentence": "string"}

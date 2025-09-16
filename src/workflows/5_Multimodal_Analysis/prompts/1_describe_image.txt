@@ -1,0 +1,10 @@
+# TASK
+Analyze the provided image based on the user's prompt.
+
+# USER PROMPT
+<user_prompt>
+
+# OUTPUT SCHEMA
+{
+  "description": "string (A detailed, one-paragraph description of the image content based on the prompt)"
+}

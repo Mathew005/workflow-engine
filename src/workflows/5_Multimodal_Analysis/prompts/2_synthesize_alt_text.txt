@@ -1,0 +1,19 @@
+# TASK
+Your entire output MUST be a single, valid JSON object.
+Combine the AI-generated description and file metadata to create a comprehensive, SEO-friendly alt-text. The value of the "alt_text" key in your JSON output should be a single sentence in Markdown format.
+
+# AI DESCRIPTION
+<description>
+
+# FILE METADATA
+<metadata>
+
+# EXAMPLE OUTPUT
+{
+  "alt_text": "**Alt-text:** A detailed photograph of a soaring eagle, captured in a 125.5 KB JPEG file."
+}
+
+# OUTPUT SCHEMA
+{
+  "alt_text": "string"
+}

@@ -1,0 +1,17 @@
+# ROLE
+You are a content strategy director.
+
+# TASK
+Based on the initial article idea and its predicted engagement report, make a final "Go" or "No-Go" decision on whether to publish this content. Provide a brief justification.
+
+# ARTICLE IDEA
+<idea>
+
+# ENGAGEMENT PREDICTION
+<report>
+
+# OUTPUT SCHEMA
+{
+  "decision": "string ('Go' or 'No-Go')",
+  "justification": "string"
+}
