@@ -17,6 +17,34 @@ from src.services.workflow_orchestrator import run_workflow_streaming
 from src.domain.workflow_schema import WorkflowDefinition
 from src.domain.lifecycle import StepLifecycle
 
+# --- CORE HELPER & CACHED FUNCTIONS ---
+
+@st.cache_resource
+def initialize_base_resources():
+    """Initializes and caches heavy resources like the DB manager."""
+    return ResourceProvider(db_manager=DatabaseManager(settings.mongo_uri))
+
+@st.cache_data
+def get_available_workflows(directory: str) -> Dict[str, Path]:
+    """Scans a directory for workflow.yaml files and returns a mapping."""
+    root_dir = Path(directory)
+    workflows = {}
+    if not root_dir.is_dir(): return {}
+    for f in sorted(root_dir.glob("*/workflow.yaml")):
+        workflows[f.parent.name.replace("_", " ").title()] = f
+    return workflows
+
+@st.cache_data
+def load_workflow_content(workflow_path: Path) -> (dict, str):
+    """Loads and caches a workflow YAML file and its raw content."""
+    with open(workflow_path, 'r') as f: content = f.read()
+    return yaml.safe_load(content), content
+
+def run_async(coro):
+    """Runs an async coroutine from a sync context."""
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(coro)
+
 # --- UI HELPER FUNCTIONS ---
 
 def is_image_url(data: Any) -> bool:
@@ -31,67 +59,55 @@ def is_tabular(data: Any) -> bool:
 def render_output(output_key: str, output_data: Any, hints: Dict[str, str]):
     st.subheader(f"Output: `{output_key}`")
     hint = hints.get(output_key)
-    
     render_data = output_data
     if isinstance(output_data, dict) and len(output_data) == 1:
         render_data = next(iter(output_data.values()))
-
     if hint == "markdown": st.markdown(render_data); return
     if hint == "image": st.image(render_data); return
     if hint == "table": st.dataframe(render_data); return
-
     if is_image_url(render_data): st.image(render_data, caption="Heuristic: Detected Image URL")
     elif is_tabular(render_data): st.dataframe(render_data); st.caption("Heuristic: Detected Tabular Data")
     elif isinstance(render_data, str) and ("\n" in render_data or "#" in render_data or "*" in render_data):
         st.markdown(render_data, help="Heuristic: Detected possible Markdown content")
     else: st.json(output_data, expanded=True)
 
-def run_async(coro):
-    loop = asyncio.get_event_loop(); return loop.run_until_complete(coro)
-
 def display_debug_log(workflow_def: dict):
-    if not st.session_state.get('debug_records'):
-        return
-        
+    if not st.session_state.get('debug_records'): return
     steps_config = {step['name']: step for step in workflow_def.get('steps', [])}
-    for record in sorted(st.session_state.debug_records, key=lambda r: r.get('timestamp', 0)):
+    log_tree, child_logs = {}, []
+    for record in st.session_state.debug_records:
+        if record.get("is_child"): child_logs.append(record)
+        else: log_tree[record['step_name']] = {'main': record, 'children': []}
+    for child in child_logs:
+        parent_name = child['step_name'].split(" [")[0]
+        if parent_name in log_tree: log_tree[parent_name]['children'].append(child)
+    
+    sorted_records = sorted(log_tree.values(), key=lambda r: r['main'].get('timestamp', 0))
+    for log_group in sorted_records:
+        record = log_group['main']
         step_name, status = record.get('step_name', 'Unknown'), record.get('status', 'Unknown')
         color = "grey"
-        if status == "Completed":
-            color = "green"
-        elif status == "Running":
-            color = "orange"
-        elif status == "Failed":
-            color = "red"
-            
+        if status == "Completed": color = "green"
+        elif status == "Running": color = "orange"
+        elif status == "Failed": color = "red"
         with st.expander(f":{color}[●] **{step_name}** (`{record.get('type')}`) - {record.get('duration_ms', 0):.2f} ms"):
-            st.subheader("Data Flow"); colA, colB = st.columns(2)
+            st.subheader("Summary Data Flow")
+            colA, colB = st.columns(2)
             colA.markdown("**Inputs**"); colA.json(record.get('inputs', {})); colB.markdown("**Outputs**"); colB.json(record.get('outputs', {}))
+            if log_group['children']:
+                st.subheader("Parallel Executions")
+                for child_record in sorted(log_group['children'], key=lambda c: c['step_name']):
+                    with st.container(border=True):
+                        st.markdown(f"**{child_record['step_name']}**")
+                        c_colA, c_colB = st.columns(2)
+                        c_colA.markdown("**Inputs**"); c_colA.json(child_record.get('inputs', {}))
+                        c_colB.markdown("**Outputs**"); c_colB.json(child_record.get('outputs', {}))
             if status == "Failed" and "error" in record:
                 st.subheader(":red[Error Details]"); st.error(record["error"].get("message", "No message."))
                 with st.expander("Show Traceback"): st.code(record["error"].get("traceback", "No traceback."), language="text")
             st.subheader("Node Config"); st.json(steps_config.get(step_name, {}).get('params', {}))
 
-# --- CORE APP LOGIC ---
-
-st.set_page_config(layout="wide", page_title="AI Workflow Engine")
-
-@st.cache_resource
-def initialize_base_resources():
-    return ResourceProvider(db_manager=DatabaseManager(settings.mongo_uri))
-
-@st.cache_data
-def get_available_workflows(directory: str) -> Dict[str, Path]:
-    root_dir = Path(directory); workflows = {}
-    if not root_dir.is_dir(): return {}
-    for f in sorted(root_dir.glob("*/workflow.yaml")):
-        workflows[f.parent.name.replace("_", " ").title()] = f
-    return workflows
-
-@st.cache_data
-def load_workflow_content(workflow_path: Path) -> (dict, str):
-    with open(workflow_path, 'r') as f: content = f.read()
-    return yaml.safe_load(content), content
+# --- ASYNC ORCHESTRATOR ---
 
 async def execute_workflow(resources: ResourceProvider, workflow_def: WorkflowDefinition, workflow_path: Path, initial_state: dict, dag_placeholder, log_placeholder, sub_dag_area):
     st.session_state.debug_records, st.session_state.sub_dags, st.session_state.step_lifecycle = [], {}, {}
@@ -108,14 +124,18 @@ async def execute_workflow(resources: ResourceProvider, workflow_def: WorkflowDe
                 with log_placeholder.container(): display_debug_log(workflow_dict)
                 await asyncio.sleep(0.01)
             elif event["type"] == "sub_workflow_event":
-                data = event["data"]; parent_step, sub_workflow_name = data["parent_step"], data["sub_workflow"]; original_event = data["original_event"]
-                if parent_step not in st.session_state.sub_dags:
-                    sub_workflow_yaml_path = workflow_path.parent / sub_workflow_name / "workflow.yaml"
+                data = event["data"]; parent_step, sub_workflow_name, map_index = data["parent_step"], data["sub_workflow"], data["map_index"]
+                original_event = data["original_event"]
+                sub_dag_key = (parent_step, map_index) if map_index is not None else parent_step
+                if sub_dag_key not in st.session_state.sub_dags:
+                    sub_workflow_yaml_path = workflow_path.parent.parent / sub_workflow_name / "workflow.yaml"
                     sub_workflow_dict, _ = load_workflow_content(sub_workflow_yaml_path)
                     sub_step_names = {step['name'] for step in sub_workflow_dict.get('steps', [])}
-                    expander = sub_dag_area.expander(f"Sub-Workflow: `{parent_step}` (`{sub_workflow_name}`)", expanded=True)
-                    st.session_state.sub_dags[parent_step] = {"dict": sub_workflow_dict, "lifecycle": {name: StepLifecycle.PENDING.value for name in sub_step_names}, "placeholder": expander.empty()}
-                sub_dag_state = st.session_state.sub_dags[parent_step]; event_type = original_event["event"]
+                    expander_title = f"Sub-Workflow: `{parent_step}` (`{sub_workflow_name}`)"
+                    if map_index is not None: expander_title += f" [Run {map_index + 1}]"
+                    expander = sub_dag_area.expander(expander_title, expanded=True)
+                    st.session_state.sub_dags[sub_dag_key] = {"dict": sub_workflow_dict, "lifecycle": {name: StepLifecycle.PENDING.value for name in sub_step_names}, "placeholder": expander.empty()}
+                sub_dag_state = st.session_state.sub_dags[sub_dag_key]; event_type = original_event["event"]
                 if event_type == "on_chain_start" and original_event["name"] != "__root__": sub_dag_state["lifecycle"][original_event["name"]] = "RUNNING"
                 elif event_type == "on_chain_end":
                     node_output = original_event["data"].get("output", {})
@@ -127,18 +147,17 @@ async def execute_workflow(resources: ResourceProvider, workflow_def: WorkflowDe
                 if event["data"].get("error_info"): status.update(label="Workflow failed!", state="error")
                 else: status.update(label="Workflow complete!", state="complete")
 
-# --- UI LAYOUT ---
+# --- MAIN UI LAYOUT ---
 
 st.set_page_config(layout="wide", page_title="AI Workflow Engine")
 st.title("Declarative AI Workflow Engine")
-resources = initialize_base_resources()
 
-# Initialize session state
+resources = initialize_base_resources() # Call is now valid
+
 st.session_state.setdefault('selected_workflow', None)
 st.session_state.setdefault('last_run_state', None)
 st.session_state.setdefault('debug_records', [])
 
-# --- Sidebar ---
 st.sidebar.title("Workflows")
 workflow_dir = "src/workflows"
 available_workflows = get_available_workflows(workflow_dir)
@@ -153,11 +172,9 @@ for name in workflow_titles:
     if st.sidebar.button(name, key=f"btn_{name}", use_container_width=True):
         if st.session_state.selected_workflow != name:
             st.session_state.selected_workflow = name
-            st.session_state.last_run_state = None
-            st.session_state.debug_records = []
+            st.session_state.last_run_state, st.session_state.debug_records = None, []
             st.rerun()
 
-# --- Main Page ---
 selected_workflow_name = st.session_state.selected_workflow
 workflow_path = available_workflows[selected_workflow_name]
 try:
@@ -166,85 +183,59 @@ try:
 except (yaml.YAMLError, ValidationError) as e: st.error(f"Invalid YAML for '{selected_workflow_name}': {e}"); st.stop()
 
 col1, col2 = st.columns([1, 2])
-
 with col1:
-    st.header(workflow_def.name)
-    st.info(f"**Description:** {workflow_def.description}")
-    
+    st.header(workflow_def.name); st.info(f"**Description:** {workflow_def.description}")
     with st.form(key="workflow_form"):
-        st.subheader("Pipeline Inputs")
-        initial_ui_state = {}
+        st.subheader("Pipeline Inputs"); initial_ui_state = {}
         for wf_input in workflow_def.inputs:
             key = f"input_{wf_input.name}"
             if wf_input.type == "text":
                 default_val = wf_input.default or ""
-                if len(default_val) > 80 or "\n" in default_val:
-                    initial_ui_state[wf_input.name] = st.text_area(wf_input.label, value=default_val, height=150, key=key)
-                else:
-                    initial_ui_state[wf_input.name] = st.text_input(wf_input.label, value=default_val, key=key)
+                if len(default_val) > 80 or "\n" in default_val: initial_ui_state[wf_input.name] = st.text_area(wf_input.label, value=default_val, height=150, key=key)
+                else: initial_ui_state[wf_input.name] = st.text_input(wf_input.label, value=default_val, key=key)
             elif wf_input.type == "json":
                 json_string = json.dumps(wf_input.default or {}, indent=2)
                 edited_json_str = st.text_area(wf_input.label, value=json_string, height=250, key=key, help="Enter a valid JSON object.")
-                try:
-                    initial_ui_state[wf_input.name] = json.loads(edited_json_str)
-                except json.JSONDecodeError:
-                    st.error("Invalid JSON format. Please correct it before running."); initial_ui_state[wf_input.name] = None
-            elif wf_input.type == "file":
-                initial_ui_state[wf_input.name] = st.file_uploader(wf_input.label, type=["png", "jpg", "jpeg", "pdf"], key=key)
-
-        with st.expander("View Workflow YAML"):
-            st.code(workflow_yaml_content, language="yaml")
+                try: initial_ui_state[wf_input.name] = json.loads(edited_json_str)
+                except json.JSONDecodeError: st.error("Invalid JSON format."); initial_ui_state[wf_input.name] = None
+            elif wf_input.type == "file": initial_ui_state[wf_input.name] = st.file_uploader(wf_input.label, type=["png", "jpg", "jpeg", "pdf"], key=key)
         
+        with st.expander("View Workflow YAML"): st.code(workflow_yaml_content, language="yaml")
         submitted = st.form_submit_button("Run Pipeline", type="primary", use_container_width=True)
 
     if submitted:
-        run_inputs = {}
-        has_error = False
+        run_inputs, has_error = {}, False
         for wf_input in workflow_def.inputs:
             ui_val = initial_ui_state.get(wf_input.name)
-            if ui_val is None and wf_input.type == 'json':
-                has_error = True; break
+            if ui_val is None and wf_input.type == 'json': has_error = True; break
             if wf_input.type == "file":
                 if not ui_val: has_error = True; st.error(f"Required file not uploaded: {wf_input.label}"); break
                 run_inputs[wf_input.name] = {"data": ui_val.getvalue(), "mime_type": ui_val.type}
-            else:
-                run_inputs[wf_input.name] = ui_val
-        
+            else: run_inputs[wf_input.name] = ui_val
         if not has_error:
             with col2:
-                dag_placeholder = st.empty()
-                st.subheader("Live Execution Log"); log_placeholder = st.empty(); sub_dag_area = st.container()
-                try:
-                    run_async(execute_workflow(resources, workflow_def, workflow_path, {"workflow_data": run_inputs}, dag_placeholder, log_placeholder, sub_dag_area))
-                except Exception as e:
-                    st.error(f"An unexpected error occurred during execution: {e}"); st.exception(e)
+                dag_placeholder, log_placeholder, sub_dag_area = st.empty(), st.empty(), st.container()
+                st.subheader("Execution Plan & Status", anchor=False)
+                st.subheader("Live Execution Log", anchor=False)
+                try: run_async(execute_workflow(resources, workflow_def, workflow_path, {"workflow_data": run_inputs}, dag_placeholder, log_placeholder, sub_dag_area))
+                except Exception as e: st.error(f"An unexpected error occurred: {e}"); st.exception(e)
 
 with col2:
-    # st.subheader("Execution Plan & Status")
+    st.subheader("Execution Plan & Status", anchor=False)
     if not st.session_state.last_run_state and not st.session_state.debug_records:
         st.graphviz_chart(generate_dag_image(workflow_def.model_dump(exclude_none=True)))
         st.info("Live status will appear here after a run is started.")
-    # else:
-    #     # This ensures the final state of the DAG and logs are shown
-    #     dag_placeholder = st.empty()
-    #     dag_placeholder.graphviz_chart(generate_dag_image(workflow_dict, st.session_state.get('step_lifecycle', {})))
-    #     st.subheader("Execution Log")
-    #     log_placeholder = st.empty()
-    #     with log_placeholder.container():
-    #         display_debug_log(workflow_dict)
-    #     sub_dag_area = st.container()
+    else:
+        dag_placeholder = st.empty(); dag_placeholder.graphviz_chart(generate_dag_image(workflow_dict, st.session_state.get('step_lifecycle', {})))
+        st.subheader("Execution Log", anchor=False); log_placeholder = st.empty()
+        with log_placeholder.container(): display_debug_log(workflow_dict)
+        sub_dag_area = st.container()
 
 if st.session_state.last_run_state:
-    st.divider()
-    st.header("Final Workflow Outputs")
-    final_state = st.session_state.last_run_state
-    workflow_outputs = final_state.get("workflow_data", {})
+    st.divider(); st.header("Final Workflow Outputs")
+    final_state = st.session_state.last_run_state; workflow_outputs = final_state.get("workflow_data", {})
     output_hints = {out.name: out.display_hint for out in workflow_def.outputs or []}
-    if not workflow_outputs:
-        st.info("The workflow did not produce any final outputs.")
+    if not workflow_outputs: st.info("The workflow did not produce any final outputs.")
     else:
-        for key, value in workflow_outputs.items():
-            render_output(key, value, output_hints); st.markdown("---")
-    
-    with st.expander("View Full Raw State (JSON)"):
-        st.json(final_state)
+        for key, value in workflow_outputs.items(): render_output(key, value, output_hints); st.markdown("---")
+    with st.expander("View Full Raw State (JSON)"): st.json(final_state)
