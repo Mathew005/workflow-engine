@@ -1,19 +1,21 @@
-# AI Workflow Engine
+# Declarative AI Workflow Engine
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Built%20with-green)](https://python.langchain.com/docs/langgraph)
 [![Streamlit](https://img.shields.io/badge/Streamlit-UI-red)](https://streamlit.io/)
 [![Gemini API](https://img.shields.io/badge/Google-Gemini%20API-blue)](https://ai.google.dev/)
 
-This project lets you build and run multi-step AI and LLM tasks using simple YAML files. It uses a web interface to show you a live graph of your workflow as it runs, step-by-step.
+This project is a powerful, declarative AI workflow engine that lets you build and run complex, multi-step tasks using simple YAML files. It uses a Streamlit web interface to provide a live, color-coded graph visualization of your workflow as it executes step-by-step.
 
 ## Features
 
-*   **Define Workflows in YAML:** Create complex pipelines by defining steps in a human-readable format.
-*   **Live Visualizations:** Watch your workflow's graph (DAG) update with colors in real-time as each step runs, succeeds, or fails.
-*   **Run Custom Python Code:** Add your own Python logic as a step in any workflow. The system finds and integrates your code automatically.
-*   **Reusable Workflows:** Call one workflow from another, allowing you to build complex systems from smaller, reusable parts.
-*   **View Data Flow:** Check the inputs and outputs of every step in the web UI to easily debug your workflows.
+*   **Declarative YAML Workflows:** Define complex logic, dependencies, and data flow in a human-readable format.
+*   **Live Visualizations:** Watch your workflow's graph (DAG) and sub-workflows update in real-time as each step runs, succeeds, or fails.
+*   **Custom Python Nodes:** Inject your own Python code as a step in any workflow. The engine automatically discovers and integrates your code.
+*   **Reusable Workflows (Composition):** Call one workflow from another, allowing you to build complex systems from smaller, reusable parts.
+*   **Conditional Logic (Branching):** Create workflows that make decisions and take different paths based on data, using a `conditional_router`.
+*   **Dynamic Mapping (Fan-Out):** Run a step in parallel for each item in a list, enabling powerful batch processing.
+*   **Multimodal Inputs:** Use files (images, PDFs) as inputs to your workflows for tasks like image analysis or document processing.
 
 ## DAG Visualization
 
@@ -29,21 +31,22 @@ workflow-engine-poc/
 ├── run.sh                  # Runner for Mac/Linux
 └── src/
     ├── app/streamlit_app.py
-    ├── config/settings.py
-    ├── data_layer/database_manager.py
-    ├── domain/workflow_schema.py
-    ├── llm_integration/gemini_client.py
-    └── services/
-        ├── custom_code/
-        │   ├── base.py
-        │   ├── __init__.py
-        │   └── steps/            # <-- Add your custom Python files here
-        ├── dag_renderer.py
-        ├── langgraph_builder.py
-        ├── pipeline/
-        │   └── workflows/        # <-- Add your workflow folders here
-        └── workflow_orchestrator.py```
-```
+    ├── custom_code/
+    │   ├── base.py
+    │   ├── __init__.py
+    │   └── steps/            # <-- Add your custom Python files here
+    │       ├── content_processing.py
+    │       ├── image_processing.py
+    │       └── text_analysis.py
+    ├── services/             # Core engine logic
+    ├── shared_prompts/       # <-- Add reusable LLM prompts here
+    └── workflows/            # <-- Add your workflow packages here
+        ├── 1_Basic_Features_Demo/
+        ├── 2_Graph_Structures_Demo/
+        ├── 3_Advanced_Logic_Demo/
+        ├── 4_Master_Orchestrator_Demo/
+        └── 5_Multimodal_Analysis/```
+
 ## Setup
 
 #### 1. Prerequisites
@@ -69,7 +72,7 @@ python -m venv venv
 
 #### 4. Install Dependencies
 ```bash
-pip install streamlit google-generativeai pydantic pydantic-settings pymongo graphviz langchain-core langgraph nest-asyncio
+pip install streamlit google-generativeai pydantic pydantic-settings graphviz langchain-core langgraph nest-asyncio httpx
 ```
 
 #### 5. Set Up API Keys
@@ -78,12 +81,14 @@ Copy the example environment file.
 ```bash
 cp .env.example .env
 ```
-Open the new `.env` file and add your Google Gemini API Key. You can add more than one; the system will automatically use the next key if one hits a usage limit.
+Open the new `.env` file and add your Google Gemini API Key(s).
 
 ```ini
 # .env
 GEMINI_API_KEY="AIzaSy...YourFirstKey"
 #GEMINI_API_KEY="AIzaSy...YourSecondKey"
+
+MONGO_URI="mongodb://localhost:27017/"
 ```
 
 ## How to Run
@@ -102,142 +107,121 @@ Open your web browser and navigate to the local URL shown in your terminal.
 
 ---
 
-## How to Build Workflows
+## Developer Guide: A Tour of the Showcase Workflows
 
-### Part 1: Defining Steps in YAML
+The best way to understand the engine is to explore the included showcase workflows. Each one is designed to demonstrate a specific set of features, building from the basics to the most advanced capabilities.
 
-A workflow is a folder containing a `workflow.yaml` file and a `prompts` subfolder. The YAML file defines the inputs and steps.
+### Part 1: The Basics (`1_Basic_Features_Demo`)
 
-This example runs two tasks at the same time (summarizing text and checking its quality) and then uses their results in a final step.
+This workflow demonstrates the three fundamental step types in a simple sequence: `llm`, `code`, and `api`.
 
-**File: `src/services/pipeline/workflows/1_Basic_Text_Analysis/workflow.yaml`**
+**`src/workflows/1_Basic_Features_Demo/workflow.yaml`**
 ```yaml
-name: "1. Basic Text Analysis (Fan-Out, Fan-In)"
-description: "Demonstrates parallel execution of LLM and Code steps, then joins their results."
-
-# These are the inputs the workflow needs to start.
-# The web UI will create a form for these.
-inputs:
-  - name: "text_input"
-    type: "text"
-    label: "Enter a block of text to analyze:"
-
-# These are the steps in the workflow.
 steps:
-  - name: "summarize_text_llm"
-    type: "llm"       # This step uses a Large Language Model.
-    dependencies: []  # It has no dependencies, so it runs first.
+  - name: "generate_article_idea"
+    type: "llm"       # 1. An LLM call to generate content.
+    dependencies: []
     params:
-      prompt_template: "1_summarize.txt"
-      # Data mapping: The workflow's 'text_input' is sent to the prompt.
-      input_mapping:
-        text_to_summarize: "text_input"
-      # The LLM's JSON output is saved as 'summary_result'.
-      output_key: "summary_result"
+      prompt_template: "1_generate_idea.txt"
+      input_mapping: { topic: "topic" }
+      output_key: "article_idea"
 
-  - name: "check_text_quality_code"
-    type: "code"      # This step runs custom Python code.
-    dependencies: []  # It also has no dependencies, so it runs in parallel.
-    params:
-      function_name: "text_processing.CheckTextQualityStep"
-      input_mapping:
-        text: "text_input"
-      output_key: "quality_stats_result"
-
-  - name: "synthesize_report_llm"
-    type: "llm"
-    # This step will only run after BOTH of its dependencies are finished.
+  - name: "validate_title_length"
+    type: "code"      # 2. A custom Python node to perform business logic.
     dependencies:
-      - "summary_result"
-      - "quality_stats_result"
+      - "article_idea"
     params:
-      prompt_template: "2_synthesize_report.txt"
-      # It uses the outputs from the previous steps as its input.
-      input_mapping:
-        summary: "summary_result"
-        statistics: "quality_stats_result"
-      output_key: "final_report"
+      function_name: "content_processing.ValidateTitleStep"
+      input_mapping: { title: "article_idea.title" }
+      output_key: "title_validation"
+
+  - name: "fetch_related_post"
+    type: "api"       # 3. An external API call to fetch data.
+    dependencies:
+      - "title_validation"
+    params:
+      method: "GET"
+      endpoint: "https://jsonplaceholder.typicode.com/posts/1"
+      output_key: "related_post_data"
 ```
 
-### Part 2: Adding Custom Python Code
+### Part 2: Graph Structures (`2_Graph_Structures_Demo`)
 
-You can add your own Python code as a workflow step. The system automatically finds any class in the `src/services/custom_code/steps/` directory that is set up correctly.
+This workflow showcases parallel execution (fan-out) where three steps run simultaneously, followed by a synchronization step (fan-in) that waits for all of them to complete. It also uses a prompt from the `shared_prompts` directory.
 
-**File: `src/services/custom_code/steps/text_processing.py`**
-
-```python
-from pydantic import BaseModel
-from src.services.custom_code.base import BaseCustomStep
-
-# 1. Define the exact inputs the class needs.
-class CheckTextQualityInput(BaseModel):
-    text: str
-
-# 2. Define the exact outputs the class will produce.
-class CheckTextQualityOutput(BaseModel):
-    word_count: int
-    average_word_length: float
-
-# 3. Create the class. The system will find it automatically.
-class CheckTextQualityStep(BaseCustomStep):
-    InputModel = CheckTextQualityInput
-    OutputModel = CheckTextQualityOutput
-
-    # The main logic of your step goes here.
-    async def execute(self, input_data: CheckTextQualityInput) -> CheckTextQualityOutput:
-        words = input_data.text.lower().split()
-        word_count = len(words)
-        
-        if word_count == 0:
-            return CheckTextQualityOutput(word_count=0, average_word_length=0)
-
-        avg_length = sum(len(word) for word in words) / word_count
-        
-        return CheckTextQualityOutput(
-            word_count=word_count,
-            average_word_length=round(avg_length, 2)
-        )
-```
-To use this in a workflow, you refer to it by its filename and class name: `text_processing.CheckTextQualityStep`.
-
-### Part 3: Calling a Workflow from Another Workflow
-
-You can treat an entire workflow as a single step inside another workflow. This lets you build complex systems out of simple, reusable parts.
-
-**File: `src/services/pipeline/workflows/3_Orchestrator_With_Sub_Workflow/workflow.yaml`**
+**`src/workflows/2_Graph_Structures_Demo/workflow.yaml`**
 ```yaml
-name: "3. Orchestrator with Sub-Workflow"
-description: "Calls the 'Basic Text Analysis' workflow as a single step."
-
-inputs:
-  - name: "customer_review_text"
-    type: "text"
-    label: "Enter a customer review:"
-
 steps:
-  - name: "translate_input_llm"
+  # These three steps have no dependencies, so they run in parallel.
+  - name: "analyze_sentiment"
     type: "llm"
     params:
-      # ... (omitted for brevity)
-      output_key: "translated_text" # This step outputs JSON like {"english_translation": "..."}
+      prompt_template: "analyze_sentiment.txt" # Uses a shared prompt
+      # ...
 
-  - name: "run_text_analysis_sub_workflow"
-    type: "workflow" # This step's type is 'workflow'.
+  - name: "extract_hashtags"
+    type: "llm"
+    # ...
+
+  - name: "get_text_statistics"
+    type: "code"
+    # ...
+
+  # This step will only run after the three steps above have all finished.
+  - name: "synthesize_engagement_report"
+    type: "llm"
     dependencies:
-      - "translated_text" # It waits for the translation step to finish.
+      - "sentiment_result"
+      - "hashtags_result"
+      - "stats_result"
+    # ...
+    ```
+
+### Part 3: Advanced Logic (`3_Advanced_Logic_Demo`)
+
+This workflow demonstrates the engine's most powerful logic features:
+1.  **Dynamic Mapping:** The `get_length_of_each_title` step runs a custom code node in parallel for each item in the input list.
+2.  **Conditional Routing:** The `content_strategy_router` step makes a decision based on the data and directs the workflow down one of two different branches.
+
+**`src/workflows/3_Advanced_Logic_Demo/workflow.yaml`**
+```yaml
+steps:
+  - name: "get_length_of_each_title"
+    type: "code"
     params:
-      # The folder name of the workflow you want to run.
-      workflow_name: "1_Basic_Text_Analysis"
-      
-      # Map data FROM the orchestrator TO the sub-workflow's input.
-      # It takes the 'english_translation' value from the 'translated_text' output
-      # and provides it as the 'text_input' for the sub-workflow.
+      map_input: "article_titles" # 1. Fan-out over this list
+      function_name: "content_processing.ValidateTitleStep"
       input_mapping:
-        translated_text.english_translation: "text_input"
-        
-      # Map data FROM the sub-workflow's output BACK to the orchestrator.
-      # It takes the 'final_report' from the sub-workflow and saves it
-      # as 'analysis_report' in this orchestrator's state.
-      output_mapping:
-        final_report: "analysis_report"
+        title: "item" # 'item' refers to each element in the mapped list
+      output_key: "title_lengths"
+
+  - name: "calculate_average_length"
+    type: "code"
+    dependencies: ["title_lengths"]
+    # ...
+    output_key: "average_analysis"
+
+  - name: "content_strategy_router"
+    type: "conditional_router" # 2. A decision-making step
+    dependencies: ["average_analysis"]
+    params:
+      condition_key: "average_analysis.decision"
+      routing_map:
+        "short": "suggest_expansions" # If decision is "short", go here.
+        "long": "suggest_summaries"  # If decision is "long", go here.
+  
+  - name: "suggest_expansions"
+    type: "llm" # This is one branch.
+    # ...
+  
+  - name: "suggest_summaries"
+    type: "llm" # This is the other branch.
+    # ...
 ```
+
+### Part 4: Composition & Multimodality (`4`, `5`, `6`)
+
+These workflows showcase the final set of advanced features:
+*   **`4_Master_Orchestrator_Demo`:** Demonstrates composition by using `type: "workflow"` to call other workflows as single, reusable steps.
+*   **`5_Multimodal_Analysis`:** Shows how to use `type: "file"` to accept image uploads and process them with a multimodal LLM.
+*   **`6_Advanced_Mapping_Demo`:** The ultimate showcase. It uses `map_input` on a `type: "workflow"` step to run an entire, complex sub-workflow in parallel for each item in a list, demonstrating the UI's unique ability to track multiple, indexed DAGs in real-time.
