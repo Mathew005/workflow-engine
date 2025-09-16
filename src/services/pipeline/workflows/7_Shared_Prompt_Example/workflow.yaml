@@ -1,0 +1,27 @@
+name: "7. Shared Prompt Example"
+description: "Demonstrates using both a local prompt and a shared, reusable prompt from the central library."
+inputs:
+  - name: "raw_text"
+    type: "text"
+    label: "Enter some text with important words:"
+    default: "The new LangGraph engine simplifies complex AI orchestration with its declarative YAML approach."
+
+steps:
+  - name: "extract_keywords_llm"
+    type: "llm"
+    dependencies: []
+    params:
+      prompt_template: "1_extract_keywords.txt"
+      input_mapping:
+        text_to_analyze: "raw_text"
+      output_key: "extracted_keywords"
+
+  - name: "format_output_as_json_llm"
+    type: "llm"
+    dependencies:
+      - "extracted_keywords"
+    params:
+      prompt_template: "force_json_output.txt"
+      input_mapping:
+        input_text: "extracted_keywords.keywords"
+      output_key: "final_json_output"

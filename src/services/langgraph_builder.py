@@ -33,16 +33,20 @@ def sanitize_for_json(data: Any) -> Any:
     return data
 
 def _resolve_value_from_state(state_data: Dict[str, Any], key_string: str) -> Any:
+    """
+    Recursively fetches a value from a nested dictionary using a dot-separated key string.
+    """
     if '.' in key_string:
         parent_key, child_key = key_string.split('.', 1)
         parent_value = state_data.get(parent_key)
         if isinstance(parent_value, dict):
-            return _resolve_value_from_state(parent_value, child_key) # Recursive call
+            # --- THIS IS THE FIX ---
+            # Make a recursive call to handle deeply nested keys like 'a.b.c'
+            return _resolve_value_from_state(parent_value, child_key)
         return None
     if key_string.startswith("'") and key_string.endswith("'"):
         return key_string[1:-1]
     return state_data.get(key_string)
-
 class LangGraphBuilder:
     def __init__(self, workflow_definition: dict, resources: ResourceProvider, workflow_path: Path):
         self.workflow_def = workflow_definition
