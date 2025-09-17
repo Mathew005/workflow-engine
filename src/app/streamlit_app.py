@@ -2,7 +2,7 @@ import streamlit as st
 import asyncio
 import yaml
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 from pathlib import Path
 from pydantic import ValidationError
 
@@ -35,7 +35,7 @@ def get_available_workflows(directory: str) -> Dict[str, Path]:
     return workflows
 
 @st.cache_data
-def load_workflow_content(workflow_path: Path) -> (dict, str):
+def load_workflow_content(workflow_path: Path) -> Tuple[dict, str]:
     """Loads and caches a workflow YAML file and its raw content."""
     with open(workflow_path, 'r') as f: content = f.read()
     return yaml.safe_load(content), content
